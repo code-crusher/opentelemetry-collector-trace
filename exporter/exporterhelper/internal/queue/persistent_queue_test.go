@@ -885,6 +885,37 @@ func TestPersistentQueue_ShutdownWhileConsuming(t *testing.T) {
 	assert.True(t, ps.client.(*storagetest.MockStorageClient).IsClosed())
 }
 
+type errorEncoding struct {
+	err error
+}
+
+func (e errorEncoding) Marshal(context.Context, intRequest) ([]byte, error) {
+	return nil, e.err
+}
+
+func (e errorEncoding) Unmarshal(bytes []byte) (context.Context, intRequest, error) {
+	return int64Encoding{}.Unmarshal(bytes)
+}
+
+func TestPersistentQueue_FailedOfferDoesNotConsumeCapacity(t *testing.T) {
+	ext := storagetest.NewMockStorageExtension(nil)
+	pq := createTestPersistentQueueWithRequestsSizer(t, ext, 1)
+
+	assert.Equal(t, int64(0), pq.Size())
+
+	// The first offer fails at the marshalling step.
+	pq.encoding = errorEncoding{err: errors.New("failed to marshal")}
+	require.Error(t, pq.Offer(context.Background(), intRequest(10)))
+
+	// The failed offer must not leave the queue in a "counted" state.
+	assert.Equal(t, int64(0), pq.Size())
+
+	// A subsequent valid offer must be accepted, since capacity was not consumed.
+	pq.encoding = int64Encoding{}
+	require.NoError(t, pq.Offer(context.Background(), intRequest(10)))
+	assert.Equal(t, int64(1), pq.Size())
+}
+
 func TestPersistentQueue_StorageFull(t *testing.T) {
 	marshaled, err := int64Encoding{}.Marshal(context.Background(), intRequest(50))
 	require.NoError(t, err)
