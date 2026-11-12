@@ -19,6 +19,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/grpc/codes"
@@ -482,7 +485,7 @@ func TestPartialSuccessInvalidBody(t *testing.T) {
 	}
 	for _, tt := range invalidBodyCases {
 		t.Run("Invalid response body_"+tt.telemetryType, func(t *testing.T) {
-			err := tt.handler([]byte{1}, "application/x-protobuf")
+			err := tt.handler(context.Background(), []byte{1}, "application/x-protobuf")
 			assert.ErrorContains(t, err, "error parsing protobuf response:")
 		})
 	}
@@ -506,7 +509,7 @@ func TestPartialSuccessUnsupportedContentType(t *testing.T) {
 	for _, telemetryType := range []string{"logs", "metrics", "traces", "profiles"} {
 		for _, tt := range unsupportedContentTypeCases {
 			t.Run("Unsupported content type "+tt.contentType+" "+telemetryType, func(t *testing.T) {
-				var handler func(b []byte, contentType string) error
+				var handler func(ctx context.Context, b []byte, contentType string) error
 				switch telemetryType {
 				case "logs":
 					handler = exp.logsPartialSuccessHandler
@@ -524,7 +527,7 @@ func TestPartialSuccessUnsupportedContentType(t *testing.T) {
 				exportResponse.PartialSuccess().SetRejectedSpans(42)
 				b, err := exportResponse.MarshalProto()
 				require.NoError(t, err)
-				err = handler(b, tt.contentType)
+				err = handler(context.Background(), b, tt.contentType)
 				assert.NoError(t, err)
 			})
 		}
@@ -639,7 +642,7 @@ func TestPartialResponse_missingHeaderButHasBody(t *testing.T) {
 						"Content-Type": {ct.contentType},
 					},
 				}
-				err = handlePartialSuccessResponse(resp, tt.handler)
+				err = handlePartialSuccessResponse(context.Background(), resp, tt.handler)
 				assert.NoError(t, err)
 			})
 		}
@@ -692,7 +695,7 @@ func TestPartialResponse_missingHeaderAndBody(t *testing.T) {
 						"Content-Type": {ct.contentType},
 					},
 				}
-				err = handlePartialSuccessResponse(resp, tt.handler)
+				err = handlePartialSuccessResponse(context.Background(), resp, tt.handler)
 				assert.NoError(t, err)
 			})
 		}
@@ -710,7 +713,7 @@ func TestPartialResponse_nonErrUnexpectedEOFError(t *testing.T) {
 		ContentLength: -1,
 		Body:          io.NopCloser(badReader{}),
 	}
-	err = handlePartialSuccessResponse(resp, exp.tracesPartialSuccessHandler)
+	err = handlePartialSuccessResponse(context.Background(), resp, exp.tracesPartialSuccessHandler)
 	assert.Error(t, err)
 }
 
@@ -780,7 +783,7 @@ func TestPartialSuccess_shortContentLengthHeader(t *testing.T) {
 					},
 				}
 				// For short content-length, a real error happens.
-				err = handlePartialSuccessResponse(resp, tt.handler)
+				err = handlePartialSuccessResponse(context.Background(), resp, tt.handler)
 				assert.Error(t, err)
 			})
 		}
@@ -865,7 +868,7 @@ func TestPartialSuccess_longContentLengthHeader(t *testing.T) {
 				}
 				// No real error happens for long content length, so the partial
 				// success is handled as success with a warning.
-				err = handlePartialSuccessResponse(resp, handler)
+				err = handlePartialSuccessResponse(context.Background(), resp, handler)
 				require.NoError(t, err)
 				assert.Len(t, observed.FilterLevelExact(zap.WarnLevel).All(), 1)
 				assert.Contains(t, observed.FilterLevelExact(zap.WarnLevel).All()[0].Message, "Partial success")
@@ -887,7 +890,7 @@ func TestPartialSuccessInvalidResponseBody(t *testing.T) {
 			"Content-Type": {protobufContentType},
 		},
 	}
-	err = handlePartialSuccessResponse(resp, exp.tracesPartialSuccessHandler)
+	err = handlePartialSuccessResponse(context.Background(), resp, exp.tracesPartialSuccessHandler)
 	assert.Error(t, err)
 }
 
@@ -969,6 +972,84 @@ func TestPartialSuccess_metrics(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, observed.FilterLevelExact(zap.WarnLevel).All(), 1)
 	require.Contains(t, observed.FilterLevelExact(zap.WarnLevel).All()[0].Message, "Partial success")
+}
+
+func TestPartialSuccess_recordsSendFailedMetricPoints(t *testing.T) {
+	// Data points rejected by the destination in a partial success response must be recorded in
+	// the otelcol_exporter_send_failed_metric_points metric. See https://github.com/open-telemetry/opentelemetry-collector/issues/16213.
+	srv := createBackend("/v1/metrics", func(writer http.ResponseWriter, _ *http.Request) {
+		response := pmetricotlp.NewExportResponse()
+		partial := response.PartialSuccess()
+		partial.SetErrorMessage("Publish to Cloud Monitoring failed")
+		partial.SetRejectedDataPoints(3)
+		bytes, err := response.MarshalProto()
+		assert.NoError(t, err)
+		writer.Header().Set("Content-Type", "application/x-protobuf")
+		_, err = writer.Write(bytes)
+		assert.NoError(t, err)
+	})
+	defer srv.Close()
+
+	cfg := &Config{
+		Encoding:        EncodingProto,
+		MetricsEndpoint: srv.URL + "/v1/metrics",
+		ClientConfig:    confighttp.ClientConfig{},
+	}
+	telemetry := componenttest.NewTelemetry()
+	t.Cleanup(func() {
+		require.NoError(t, telemetry.Shutdown(context.Background()))
+	})
+	set := exportertest.NewNopSettings(metadata.Type)
+	set.TelemetrySettings = telemetry.NewTelemetrySettings()
+
+	exp, err := createMetrics(context.Background(), set, cfg)
+	require.NoError(t, err)
+
+	// start the exporter
+	err = exp.Start(context.Background(), componenttest.NewNopHost())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, exp.Shutdown(context.Background()))
+	})
+
+	// Generate a request with 5 metric data points, 3 of which the destination rejects.
+	metrics := pmetric.NewMetrics()
+	rm := metrics.ResourceMetrics().AppendEmpty()
+	sm := rm.ScopeMetrics().AppendEmpty()
+	m := sm.Metrics().AppendEmpty()
+	m.SetName("test_metric")
+	gauge := m.SetEmptyGauge()
+	for range 5 {
+		gauge.DataPoints().AppendEmpty()
+	}
+
+	require.NoError(t, exp.ConsumeMetrics(context.Background(), metrics))
+
+	// 2 of the 5 data points were accepted by the destination.
+	srvURL, err := url.Parse(srv.URL + "/v1/metrics")
+	require.NoError(t, err)
+	endpointAttrs := endpointAttributes(srvURL)
+
+	baseAttrs := append(endpointAttrs, attribute.String("exporter", set.ID.String()))
+	sentAttrs := attribute.NewSet(baseAttrs...)
+	got, err := telemetry.GetMetric("otelcol_exporter_sent_metric_points")
+	require.NoError(t, err)
+	sum, ok := got.Data.(metricdata.Sum[int64])
+	require.True(t, ok)
+	require.Len(t, sum.DataPoints, 1)
+	require.Equal(t, int64(2), sum.DataPoints[0].Value)
+	require.Equal(t, sentAttrs, sum.DataPoints[0].Attributes)
+
+	failedAttrs := attribute.NewSet(append(baseAttrs,
+		attribute.String(string(semconv.ErrorTypeKey), "_OTHER"),
+		attribute.Bool("error.permanent", true))...)
+	got, err = telemetry.GetMetric("otelcol_exporter_send_failed_metric_points")
+	require.NoError(t, err)
+	sum, ok = got.Data.(metricdata.Sum[int64])
+	require.True(t, ok)
+	require.Len(t, sum.DataPoints, 1)
+	require.Equal(t, int64(3), sum.DataPoints[0].Value)
+	require.Equal(t, failedAttrs, sum.DataPoints[0].Attributes)
 }
 
 func TestPartialSuccess_profiles(t *testing.T) {

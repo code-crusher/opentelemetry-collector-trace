@@ -17,6 +17,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -578,6 +581,89 @@ func TestSendMetrics(t *testing.T) {
 	require.NoError(t, exp.ConsumeMetrics(context.Background(), md))
 	assert.Len(t, observed.FilterLevelExact(zap.WarnLevel).All(), 1)
 	assert.Contains(t, observed.FilterLevelExact(zap.WarnLevel).All()[0].Message, "Partial success")
+}
+
+func TestPartialSuccessRecordsSendFailedMetricPoints(t *testing.T) {
+	// Data points rejected by the destination in a partial success response must be recorded in
+	// the otelcol_exporter_send_failed_metric_points metric.
+	// See https://github.com/open-telemetry/opentelemetry-collector/issues/16213.
+	ln, err := net.Listen("tcp", "localhost:")
+	require.NoError(t, err, "Failed to find an available address to run the gRPC server: %v", err)
+	rcv := otlpMetricsReceiverOnGRPCServer(ln)
+	// Also closes the connection.
+	defer rcv.srv.GracefulStop()
+
+	rcv.setExportResponse(func() pmetricotlp.ExportResponse {
+		response := pmetricotlp.NewExportResponse()
+		partialSuccess := response.PartialSuccess()
+		partialSuccess.SetErrorMessage("Some data points were not ingested")
+		partialSuccess.SetRejectedDataPoints(1)
+		return response
+	})
+
+	factory := NewFactory()
+	cfg := factory.CreateDefaultConfig().(*Config)
+	// Disable queuing to ensure that we execute the request when calling ConsumeMetrics
+	// otherwise we will not see any errors.
+	cfg.QueueConfig = configoptional.None[exporterhelper.QueueBatchConfig]()
+	cfg.ClientConfig = configgrpc.ClientConfig{
+		Endpoint: ln.Addr().String(),
+		TLS: configtls.ClientConfig{
+			Insecure: true,
+		},
+	}
+	telemetry := componenttest.NewTelemetry()
+	t.Cleanup(func() {
+		require.NoError(t, telemetry.Shutdown(context.Background()))
+	})
+	set := exportertest.NewNopSettings(factory.Type())
+	set.TelemetrySettings = telemetry.NewTelemetrySettings()
+
+	exp, err := factory.CreateMetrics(context.Background(), set, cfg)
+	require.NoError(t, err)
+	require.NotNil(t, exp)
+	defer func() {
+		assert.NoError(t, exp.Shutdown(context.Background()))
+	}()
+	require.NoError(t, exp.Start(context.Background(), componenttest.NewNopHost()))
+
+	// Send two metrics, i.e. 4 data points, 1 of which is rejected by the destination.
+	require.NoError(t, exp.ConsumeMetrics(context.Background(), testdata.GenerateMetrics(2)))
+
+	// Wait until it is received.
+	require.Eventually(t, func() bool {
+		return rcv.requestCount.Load() > 0
+	}, 10*time.Second, 5*time.Millisecond)
+
+	host, port, err := net.SplitHostPort(cfg.ClientConfig.Endpoint)
+	require.NoError(t, err)
+	portNumber, err := strconv.Atoi(port)
+	require.NoError(t, err)
+	baseAttrs := []attribute.KeyValue{
+		semconv.ServerAddress(host),
+		semconv.ServerPort(portNumber),
+		attribute.String("exporter", set.ID.String()),
+	}
+
+	sentAttrs := attribute.NewSet(baseAttrs...)
+	got, err := telemetry.GetMetric("otelcol_exporter_sent_metric_points")
+	require.NoError(t, err)
+	sum, ok := got.Data.(metricdata.Sum[int64])
+	require.True(t, ok)
+	require.Len(t, sum.DataPoints, 1)
+	require.Equal(t, int64(3), sum.DataPoints[0].Value)
+	require.Equal(t, sentAttrs, sum.DataPoints[0].Attributes)
+
+	failedAttrs := attribute.NewSet(append(baseAttrs,
+		attribute.String(string(semconv.ErrorTypeKey), "_OTHER"),
+		attribute.Bool("error.permanent", true))...)
+	got, err = telemetry.GetMetric("otelcol_exporter_send_failed_metric_points")
+	require.NoError(t, err)
+	sum, ok = got.Data.(metricdata.Sum[int64])
+	require.True(t, ok)
+	require.Len(t, sum.DataPoints, 1)
+	require.Equal(t, int64(1), sum.DataPoints[0].Value)
+	require.Equal(t, failedAttrs, sum.DataPoints[0].Attributes)
 }
 
 func TestSendTraceDataServerDownAndUp(t *testing.T) {

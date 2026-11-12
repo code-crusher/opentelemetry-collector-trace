@@ -106,6 +106,7 @@ func (e *baseExporter) pushTraces(ctx context.Context, td ptrace.Traces) error {
 			zap.String("message", resp.PartialSuccess().ErrorMessage()),
 			zap.Int64("dropped_spans", resp.PartialSuccess().RejectedSpans()),
 		)
+		exporterhelper.RecordPartialSuccess(ctx, partialSuccess.RejectedSpans())
 	}
 	return nil
 }
@@ -126,6 +127,7 @@ func (e *baseExporter) pushMetrics(ctx context.Context, md pmetric.Metrics) erro
 			zap.String("message", resp.PartialSuccess().ErrorMessage()),
 			zap.Int64("dropped_data_points", resp.PartialSuccess().RejectedDataPoints()),
 		)
+		exporterhelper.RecordPartialSuccess(ctx, partialSuccess.RejectedDataPoints())
 	}
 	return nil
 }
@@ -146,6 +148,7 @@ func (e *baseExporter) pushLogs(ctx context.Context, ld plog.Logs) error {
 			zap.String("message", resp.PartialSuccess().ErrorMessage()),
 			zap.Int64("dropped_log_records", resp.PartialSuccess().RejectedLogRecords()),
 		)
+		exporterhelper.RecordPartialSuccess(ctx, partialSuccess.RejectedLogRecords())
 	}
 	return nil
 }
@@ -166,6 +169,7 @@ func (e *baseExporter) pushProfiles(ctx context.Context, td pprofile.Profiles) e
 			zap.String("message", resp.PartialSuccess().ErrorMessage()),
 			zap.Int64("dropped_profiles", resp.PartialSuccess().RejectedProfiles()),
 		)
+		exporterhelper.RecordPartialSuccess(ctx, partialSuccess.RejectedProfiles())
 	}
 	return nil
 }

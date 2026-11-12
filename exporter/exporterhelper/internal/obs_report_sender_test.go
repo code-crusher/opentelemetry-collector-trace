@@ -741,6 +741,118 @@ type testParams struct {
 	err   error
 }
 
+func TestExportMetricsPartialSuccess(t *testing.T) {
+	tt := componenttest.NewTelemetry()
+	t.Cleanup(func() {
+		require.NoError(t, tt.Shutdown(context.Background()))
+	})
+
+	telemetrySettings := tt.NewTelemetrySettings()
+
+	obsrep, err := newTestObsReportSender(t,
+		exporter.Settings{
+			ID:                exporterID,
+			TelemetrySettings: telemetrySettings,
+			BuildInfo:         component.NewDefaultBuildInfo(),
+		},
+		pipeline.SignalMetrics,
+		nil,
+		false,
+		telemetrySettings.TracerProvider.Tracer(
+			"go.opentelemetry.io/collector/exporter/exporterhelper",
+		),
+		sender.NewSender(func(ctx context.Context, _ request.Request) error {
+			RecordPartialSuccess(ctx, 3)
+			return nil
+		}),
+	)
+	require.NoError(t, err)
+
+	// A request with 10 metric data points, 3 of which are rejected by the destination.
+	require.NoError(t, obsrep.Send(context.Background(), &requesttest.FakeRequest{Items: 10}))
+
+	metadatatest.AssertEqualExporterSentMetricPoints(t, tt,
+		[]metricdata.DataPoint[int64]{
+			{
+				Attributes: attribute.NewSet(
+					attribute.String("exporter", exporterID.String()),
+				),
+				Value: 7,
+			},
+		}, metricdatatest.IgnoreTimestamp(), metricdatatest.IgnoreExemplars())
+
+	metadatatest.AssertEqualExporterSendFailedMetricPoints(t, tt,
+		[]metricdata.DataPoint[int64]{
+			{
+				Attributes: attribute.NewSet(
+					attribute.String("exporter", exporterID.String()),
+					attribute.String(string(semconv.ErrorTypeKey), "_OTHER"),
+					attribute.Bool(ErrorPermanentKey, true),
+				),
+				Value: 3,
+			},
+		}, metricdatatest.IgnoreTimestamp(), metricdatatest.IgnoreExemplars())
+
+	// The span records the split between sent and failed items.
+	spans := tt.SpanRecorder.Ended()
+	require.Len(t, spans, 1)
+	require.Contains(t, spans[0].Attributes(), attribute.KeyValue{Key: ItemsSent, Value: attribute.Int64Value(7)})
+	require.Contains(t, spans[0].Attributes(), attribute.KeyValue{Key: ItemsFailed, Value: attribute.Int64Value(3)})
+}
+
+func TestExportMetricsPartialSuccessRejectedTooMany(t *testing.T) {
+	// A misbehaving destination may report more rejected items than the request contained.
+	tt := componenttest.NewTelemetry()
+	t.Cleanup(func() {
+		require.NoError(t, tt.Shutdown(context.Background()))
+	})
+
+	telemetrySettings := tt.NewTelemetrySettings()
+
+	obsrep, err := newTestObsReportSender(t,
+		exporter.Settings{
+			ID:                exporterID,
+			TelemetrySettings: telemetrySettings,
+			BuildInfo:         component.NewDefaultBuildInfo(),
+		},
+		pipeline.SignalMetrics,
+		nil,
+		false,
+		telemetrySettings.TracerProvider.Tracer(
+			"go.opentelemetry.io/collector/exporter/exporterhelper",
+		),
+		sender.NewSender(func(ctx context.Context, _ request.Request) error {
+			RecordPartialSuccess(ctx, 20)
+			return nil
+		}),
+	)
+	require.NoError(t, err)
+
+	require.NoError(t, obsrep.Send(context.Background(), &requesttest.FakeRequest{Items: 10}))
+
+	metadatatest.AssertEqualExporterSentMetricPoints(t, tt,
+		[]metricdata.DataPoint[int64]{
+			{
+				Attributes: attribute.NewSet(
+					attribute.String("exporter", exporterID.String()),
+				),
+				Value: 0,
+			},
+		}, metricdatatest.IgnoreTimestamp(), metricdatatest.IgnoreExemplars())
+
+	metadatatest.AssertEqualExporterSendFailedMetricPoints(t, tt,
+		[]metricdata.DataPoint[int64]{
+			{
+				Attributes: attribute.NewSet(
+					attribute.String("exporter", exporterID.String()),
+					attribute.String(string(semconv.ErrorTypeKey), "_OTHER"),
+					attribute.Bool(ErrorPermanentKey, true),
+				),
+				Value: 10,
+			},
+		}, metricdatatest.IgnoreTimestamp(), metricdatatest.IgnoreExemplars())
+}
+
 func TestObsReportSenderBatchSizeDisabled(t *testing.T) {
 	tt := componenttest.NewTelemetry()
 	t.Cleanup(func() {

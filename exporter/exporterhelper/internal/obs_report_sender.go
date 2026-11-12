@@ -82,6 +82,9 @@ func (ors *obsReportSender[K]) Send(ctx context.Context, req K) error {
 	// Have to read the number of items before sending the request since the request can
 	// be modified by the downstream components like the batcher.
 	c := ors.startOp(ctx)
+	// Allow the exporter to report items rejected by the destination as part of a partial
+	// success response, so that they are accounted as failed to be sent.
+	c = newPartialSuccessContext(c)
 	items := req.ItemsCount()
 	if ors.batchEnabled {
 		ors.obsMetrics.RecordInt(c, queuebatchtelemetry.MetricBatchSendSize, int64(items))
@@ -112,6 +115,14 @@ func (ors *obsReportSender[K]) endOp(ctx context.Context, numRecords int, err er
 	ors.obsMetrics.RecordInt(ctx, queuebatchtelemetry.MetricInFlight, -1)
 
 	numSent, numFailedToSend := toNumItems(numRecords, err)
+	if err == nil {
+		// The request was accepted by the destination. Account for the items rejected as part
+		// of a partial success response, if the destination reported any, as failed to be sent.
+		if rejected := partialSuccessRejectedItems(ctx); rejected > 0 {
+			numFailedToSend = min(rejected, int64(numRecords))
+			numSent = int64(numRecords) - numFailedToSend
+		}
+	}
 
 	ors.obsMetrics.RecordInt(ctx, queuebatchtelemetry.MetricSent, numSent)
 
@@ -143,7 +154,13 @@ func toNumItems(numExportedItems int, err error) (int64, int64) {
 
 func extractFailureAttributes(err error) attribute.Set {
 	if err == nil {
-		return attribute.NewSet()
+		// A nil error with failed items means the destination rejected the items as part of a
+		// partial success response. The items are permanently rejected, the destination will
+		// not accept them if they are sent again.
+		return attribute.NewSet(
+			attribute.String(string(semconv.ErrorTypeKey), "_OTHER"),
+			attribute.Bool(ErrorPermanentKey, true),
+		)
 	}
 
 	attrs := []attribute.KeyValue{}

@@ -206,7 +206,7 @@ func (e *baseExporter) export(ctx context.Context, requestURL string, request []
 	}()
 
 	if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
-		if err := handlePartialSuccessResponse(resp, partialSuccessHandler); err != nil {
+		if err := handlePartialSuccessResponse(ctx, resp, partialSuccessHandler); err != nil {
 			return consumererror.NewPermanent(err)
 		}
 		return nil
@@ -342,18 +342,18 @@ func readResponseStatus(resp *http.Response) *status.Status {
 	return respStatus
 }
 
-func handlePartialSuccessResponse(resp *http.Response, partialSuccessHandler partialSuccessHandler) error {
+func handlePartialSuccessResponse(ctx context.Context, resp *http.Response, partialSuccessHandler partialSuccessHandler) error {
 	bodyBytes, err := readResponseBody(resp)
 	if err != nil {
 		return err
 	}
 
-	return partialSuccessHandler(bodyBytes, resp.Header.Get("Content-Type"))
+	return partialSuccessHandler(ctx, bodyBytes, resp.Header.Get("Content-Type"))
 }
 
-type partialSuccessHandler func(bytes []byte, contentType string) error
+type partialSuccessHandler func(ctx context.Context, bytes []byte, contentType string) error
 
-func (e *baseExporter) tracesPartialSuccessHandler(protoBytes []byte, contentType string) error {
+func (e *baseExporter) tracesPartialSuccessHandler(ctx context.Context, protoBytes []byte, contentType string) error {
 	if protoBytes == nil {
 		return nil
 	}
@@ -379,11 +379,12 @@ func (e *baseExporter) tracesPartialSuccessHandler(protoBytes []byte, contentTyp
 			zap.String("message", exportResponse.PartialSuccess().ErrorMessage()),
 			zap.Int64("dropped_spans", exportResponse.PartialSuccess().RejectedSpans()),
 		)
+		exporterhelper.RecordPartialSuccess(ctx, partialSuccess.RejectedSpans())
 	}
 	return nil
 }
 
-func (e *baseExporter) metricsPartialSuccessHandler(protoBytes []byte, contentType string) error {
+func (e *baseExporter) metricsPartialSuccessHandler(ctx context.Context, protoBytes []byte, contentType string) error {
 	if protoBytes == nil {
 		return nil
 	}
@@ -409,11 +410,12 @@ func (e *baseExporter) metricsPartialSuccessHandler(protoBytes []byte, contentTy
 			zap.String("message", exportResponse.PartialSuccess().ErrorMessage()),
 			zap.Int64("dropped_data_points", exportResponse.PartialSuccess().RejectedDataPoints()),
 		)
+		exporterhelper.RecordPartialSuccess(ctx, partialSuccess.RejectedDataPoints())
 	}
 	return nil
 }
 
-func (e *baseExporter) logsPartialSuccessHandler(protoBytes []byte, contentType string) error {
+func (e *baseExporter) logsPartialSuccessHandler(ctx context.Context, protoBytes []byte, contentType string) error {
 	if protoBytes == nil {
 		return nil
 	}
@@ -439,11 +441,12 @@ func (e *baseExporter) logsPartialSuccessHandler(protoBytes []byte, contentType 
 			zap.String("message", exportResponse.PartialSuccess().ErrorMessage()),
 			zap.Int64("dropped_log_records", exportResponse.PartialSuccess().RejectedLogRecords()),
 		)
+		exporterhelper.RecordPartialSuccess(ctx, partialSuccess.RejectedLogRecords())
 	}
 	return nil
 }
 
-func (e *baseExporter) profilesPartialSuccessHandler(protoBytes []byte, contentType string) error {
+func (e *baseExporter) profilesPartialSuccessHandler(ctx context.Context, protoBytes []byte, contentType string) error {
 	if protoBytes == nil {
 		return nil
 	}
@@ -469,6 +472,7 @@ func (e *baseExporter) profilesPartialSuccessHandler(protoBytes []byte, contentT
 			zap.String("message", exportResponse.PartialSuccess().ErrorMessage()),
 			zap.Int64("dropped_samples", exportResponse.PartialSuccess().RejectedProfiles()),
 		)
+		exporterhelper.RecordPartialSuccess(ctx, partialSuccess.RejectedProfiles())
 	}
 	return nil
 }
