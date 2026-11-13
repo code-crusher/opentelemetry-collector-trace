@@ -2,4 +2,15 @@
 
 package confighttp
 
-// No supported validation rules found in the schema, no tests generated.
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestDNSResolverConfigValidate_MinimumTimeout(t *testing.T) {
+	cfg := DNSResolverConfig{}
+	cfg.Timeout = 0 - 1
+
+	require.ErrorContains(t, cfg.Validate(), "timeout value must be greater than or equal to 0")
+}

@@ -76,6 +76,22 @@
           },
           "description": "Dialer middleware is a handler customizing how the client will dial connections over TCP."
         },
+        "dns": {
+          "type": "object",
+          "properties": {
+            "endpoint": {
+              "type": "string",
+              "description": "Is the address of the DNS server to use for hostname resolution\n(e.g. \"1.1.1.1:53\"). Must be an IP address and port; a zero value\nmeans the default resolver is used.\n"
+            },
+            "timeout": {
+              "type": "string",
+              "description": "Is the maximum amount of time a DNS query may take, including the\ntime spent connecting to the DNS server. Default is 0 (no timeout).\n",
+              "minimum": 0,
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+            }
+          },
+          "description": "Configures the DNS resolver used by the HTTP client for hostname resolution.\nWhen set, hostname resolution is performed by the given DNS server instead of\nthe host's default resolver, and resolution failures are surfaced rather than\nsilently falling back to the default resolver.\n"
+        },
         "endpoint": {
           "type": "string",
           "description": "Is the target URL to send data to (e.g.: http://some.url:9411/v1/traces)."
@@ -297,6 +313,22 @@
       },
       "description": "Configures a receiver for HTTP cross-origin resource sharing (CORS).\nSee the underlying https://github.com/rs/cors package for details.\n",
       "default": {}
+    },
+    "dns_resolver_config": {
+      "type": "object",
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "description": "Is the address of the DNS server to use for hostname resolution\n(e.g. \"1.1.1.1:53\"). Must be an IP address and port; a zero value\nmeans the default resolver is used.\n"
+        },
+        "timeout": {
+          "type": "string",
+          "description": "Is the maximum amount of time a DNS query may take, including the\ntime spent connecting to the DNS server. Default is 0 (no timeout).\n",
+          "minimum": 0,
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+        }
+      },
+      "description": "Describes the DNS resolver configuration."
     },
     "keepalive_client_config": {
       "type": "object",

@@ -65,6 +65,9 @@ README](../configtls/README.md).
 - [`http2_ping_timeout`](https://pkg.go.dev/golang.org/x/net/http2#Transport)
 - [`cookies`](https://pkg.go.dev/net/http#CookieJar)
   - [`enabled`] if enabled, the client will store cookies from server responses and reuse them in subsequent requests.
+- `dns`: Configures the DNS resolver used by the HTTP client for hostname resolution. When set, hostname resolution is performed by the given DNS server instead of the host's default resolver, and resolution failures are surfaced rather than silently falling back to the default resolver.
+  - `endpoint`: The address of the DNS server (e.g. `1.1.1.1:53`). Must be a literal IP address and port.
+  - `timeout`: The maximum amount of time a DNS query may take, including the time spent connecting to the DNS server. Default: `0` (no timeout).
 - [`middlewares`](../configmiddleware/README.md)
 
 Example:
@@ -87,6 +90,9 @@ exporter:
       level: 1
     cookies:
       enabled: true
+    dns:
+      endpoint: 1.1.1.1:53
+      timeout: 2s
 ```
 
 ## Server Configuration

@@ -5,12 +5,15 @@ package confighttp
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -731,4 +734,255 @@ func TestClientMiddlewaresFieldCompatibility(t *testing.T) {
 	assert.Equal(t, "http://localhost:4318", clientConfig.Endpoint)
 	assert.Len(t, clientConfig.Middlewares, 1)
 	assert.Equal(t, component.MustNewID("test_middleware"), clientConfig.Middlewares[0].ID)
+}
+
+func TestDNSResolverConfigValidateEndpoint(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		wantErr  string
+	}{
+		{name: "ipv4 with port", endpoint: "1.1.1.1:53"},
+		{name: "ipv6 with port", endpoint: "[2001:db8::1]:53"},
+		{name: "empty", endpoint: "", wantErr: "dns endpoint cannot be empty"},
+		{name: "missing port", endpoint: "1.1.1.1", wantErr: `invalid dns endpoint "1.1.1.1"`},
+		{name: "hostname", endpoint: "dns.example.com:53", wantErr: `dns endpoint "dns.example.com:53" must include a literal IP address`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := (&DNSResolverConfig{Endpoint: tt.endpoint}).validateEndpoint()
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// dnsTestServer is a minimal UDP DNS server that answers every A query with
+// the given IPv4 address, enough to exercise a [net.Resolver] configured with
+// a custom Dial func.
+type dnsTestServer struct {
+	conn     *net.UDPConn
+	answer   net.IP
+	gotQuery chan struct{}
+}
+
+func newDNSTestServer(t *testing.T, answer net.IP) *dnsTestServer {
+	t.Helper()
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	require.NoError(t, err)
+	s := &dnsTestServer{conn: conn, answer: answer, gotQuery: make(chan struct{}, 1)}
+	go s.serve()
+	t.Cleanup(func() { conn.Close() })
+	return s
+}
+
+func (s *dnsTestServer) addr() string {
+	return s.conn.LocalAddr().String()
+}
+
+func (s *dnsTestServer) serve() {
+	buf := make([]byte, 512)
+	for {
+		n, addr, err := s.conn.ReadFromUDP(buf)
+		if err != nil {
+			return
+		}
+		query := append([]byte(nil), buf[:n]...) // copy: buf is reused
+		resp := dnsAResponse(query, s.answer)
+		if resp == nil {
+			continue
+		}
+		if _, err := s.conn.WriteToUDP(resp, addr); err != nil {
+			return
+		}
+		select {
+		case s.gotQuery <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// dnsAResponse builds a reply to the A or AAAA query in msg: A queries get
+// one A record with the given IPv4; AAAA queries get an empty answer so the
+// caller only sees the A record. Returns nil for unparseable queries.
+func dnsAResponse(query []byte, answer net.IP) []byte {
+	if len(query) < 12 {
+		return nil
+	}
+	// walk the QNAME labels to find where the question ends.
+	pos := 12
+	for {
+		if pos >= len(query) {
+			return nil
+		}
+		l := int(query[pos])
+		if l == 0 {
+			pos++
+			break
+		}
+		if pos+1+l > len(query) || l > 63 {
+			return nil
+		}
+		pos += 1 + l
+	}
+	if pos+4 > len(query) {
+		return nil
+	}
+	qtype := binary.BigEndian.Uint16(query[pos : pos+2])
+	question := append([]byte(nil), query[12:pos+4]...)
+
+	// header: same ID; QR=1, AA=1, RD copied; RA=1; QD=1.
+	resp := make([]byte, 0, 12+len(question)+16)
+	resp = append(resp, query[0], query[1], 0x85, 0x80, 0x00, 0x01)
+
+	var answers uint16
+	switch qtype {
+	case 1: // A
+		answers = 1
+	case 28: // AAAA: no answers
+	default:
+		return nil
+	}
+	resp = binary.BigEndian.AppendUint16(resp, answers)
+	resp = binary.BigEndian.AppendUint16(resp, 0) // NS
+	resp = binary.BigEndian.AppendUint16(resp, 0) // AR
+
+	resp = append(resp, question...)
+	if answers == 1 {
+		resp = append(resp,
+			0xc0, 0x0c, // name: pointer to the question
+			0x00, 0x01, // type: A
+			0x00, 0x01, // class: IN
+			0x00, 0x00, 0x00, 0x00, // TTL: 0
+			0x00, 0x04, // RDLENGTH: 4
+		)
+		resp = append(resp, answer.To4()...)
+	}
+	return resp
+}
+
+func TestToClientUsesConfiguredDNSResolver(t *testing.T) {
+	// A local HTTP server standing in for the resolved destination.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	srvAddr := srv.Listener.Addr().(*net.TCPAddr)
+	dnsSrv := newDNSTestServer(t, srvAddr.IP)
+
+	// The hostname must not resolve through the default resolver: point the
+	// client at a name that only the test DNS server knows about, and at the
+	// test server's port so the resolved address is dialable.
+	settings := componenttest.NewNopTelemetrySettings()
+	settings.TracerProvider = nil
+	settings.MeterProvider = nil
+	cfg := ClientConfig{
+		Endpoint: fmt.Sprintf("http://dns-resolver-test.invalid:%d", srvAddr.Port),
+		DNS:      configoptional.Some(DNSResolverConfig{Endpoint: dnsSrv.addr()}),
+	}
+	client, err := cfg.ToClient(context.Background(), nil, settings)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodGet, cfg.Endpoint, http.NoBody)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Sanity-check that the default resolver could not have resolved the name.
+	_, defaultErr := net.DefaultResolver.LookupHost(context.Background(), "dns-resolver-test.invalid")
+	require.Error(t, defaultErr)
+
+	select {
+	case <-dnsSrv.gotQuery:
+	default:
+		t.Error("expected the configured DNS server to receive a query")
+	}
+}
+
+func TestToClientSurfacesDNSResolverFailure(t *testing.T) {
+	// The DNS endpoint points at a closed port on localhost: dialing the
+	// resolver fails, and the request must fail without falling back to the
+	// default resolver.
+	settings := componenttest.NewNopTelemetrySettings()
+	settings.TracerProvider = nil
+	settings.MeterProvider = nil
+	cfg := ClientConfig{
+		Endpoint: "http://dns-resolver-test.invalid",
+		DNS:      configoptional.Some(DNSResolverConfig{Endpoint: "127.0.0.1:1", Timeout: time.Second}),
+	}
+	client, err := cfg.ToClient(context.Background(), nil, settings)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodGet, cfg.Endpoint, http.NoBody)
+	require.NoError(t, err)
+	_, err = client.Do(req)
+	require.Error(t, err)
+	// The error must point at the configured resolver address, proving there
+	// was no fallback to the default resolver.
+	assert.Contains(t, err.Error(), "127.0.0.1:1")
+}
+
+func TestToClientDefaultDNSResolverPreserved(t *testing.T) {
+	settings := componenttest.NewNopTelemetrySettings()
+	settings.TracerProvider = nil
+	settings.MeterProvider = nil
+	cfg := NewDefaultClientConfig()
+	client, err := cfg.ToClient(context.Background(), nil, settings)
+	require.NoError(t, err)
+	transport, ok := client.Transport.(*http.Transport)
+	require.True(t, ok)
+	// Without DNS configuration the transport keeps the default dialing
+	// behavior of [http.DefaultTransport].
+	assert.Equal(t,
+		reflect.ValueOf(http.DefaultTransport.(*http.Transport).DialContext).Pointer(),
+		reflect.ValueOf(transport.DialContext).Pointer())
+}
+
+func TestClientUnmarshalYAMLWithDNS(t *testing.T) {
+	cfgMap, err := confmaptest.LoadConf(filepath.Join("testdata", "dns.yaml"))
+	require.NoError(t, err)
+	var clientConfig ClientConfig
+	clientSub, err := cfgMap.Sub("client")
+	require.NoError(t, err)
+	require.NoError(t, clientSub.Unmarshal(&clientConfig))
+
+	dnsCfg := clientConfig.DNS.Get()
+	require.NotNil(t, dnsCfg, "dns config should be present")
+	assert.Equal(t, "1.1.1.1:53", dnsCfg.Endpoint)
+	assert.Equal(t, 2*time.Second, dnsCfg.Timeout)
+	require.NoError(t, clientConfig.Validate())
+}
+
+func TestClientValidateDNS(t *testing.T) {
+	tests := []struct {
+		name     string
+		set      bool
+		endpoint string
+		wantErr  string
+	}{
+		{name: "no dns config"},
+		{name: "valid", set: true, endpoint: "1.1.1.1:53"},
+		{name: "hostname not allowed", set: true, endpoint: "dns.example.com:53", wantErr: "must include a literal IP address"},
+		{name: "missing port", set: true, endpoint: "1.1.1.1", wantErr: `invalid dns endpoint "1.1.1.1"`},
+		{name: "empty", set: true, endpoint: "", wantErr: "dns endpoint cannot be empty"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := ClientConfig{Endpoint: "http://localhost:4318"}
+			if tt.set {
+				cfg.DNS = configoptional.Some(DNSResolverConfig{Endpoint: tt.endpoint})
+			}
+			err := cfg.Validate()
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+			}
+		})
+	}
 }

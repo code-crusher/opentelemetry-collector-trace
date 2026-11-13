@@ -1,0 +1,5 @@
+client:
+  endpoint: https://service.example.com
+  dns:
+    endpoint: 1.1.1.1:53
+    timeout: 2s

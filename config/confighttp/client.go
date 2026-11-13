@@ -7,10 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"slices"
+	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -70,7 +72,46 @@ func (cc *ClientConfig) Validate() error {
 	if cc.DialerMiddleware.HasValue() && !configmiddleware.IsCustomTCPRoutingEnabled() {
 		return errors.New("use of the dialer_middleware feature requires to enable the feature gate 'pkg.configmiddleware.CustomTCPRouting'")
 	}
+	if dnsCfg := cc.DNS.Get(); dnsCfg != nil {
+		if err := dnsCfg.validateEndpoint(); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// validateEndpoint checks that the DNS resolver endpoint is usable: it must be
+// a literal IP address and port, so that resolving the resolver's own address
+// is never required.
+func (dc *DNSResolverConfig) validateEndpoint() error {
+	if dc.Endpoint == "" {
+		return errors.New("dns endpoint cannot be empty")
+	}
+	host, _, err := net.SplitHostPort(dc.Endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid dns endpoint %q: %w", dc.Endpoint, err)
+	}
+	if net.ParseIP(host) == nil {
+		return fmt.Errorf("dns endpoint %q must include a literal IP address, not a hostname", dc.Endpoint)
+	}
+	return nil
+}
+
+// toResolver builds a [net.Resolver] that forwards queries to the configured
+// DNS server. Lookups that fail against that server fail overall; there is no
+// fallback to the default resolver.
+func (dc *DNSResolverConfig) toResolver() *net.Resolver {
+	return &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			var d net.Dialer
+			if dc.Timeout > 0 {
+				d.Timeout = dc.Timeout
+				d.Deadline = time.Now().Add(dc.Timeout)
+			}
+			return d.DialContext(ctx, network, dc.Endpoint)
+		},
+	}
 }
 
 // ToClientOption is an option to change the behavior of the HTTP client
@@ -101,6 +142,16 @@ func (cc *ClientConfig) ToClient(ctx context.Context, extensions map[component.I
 			return nil, rerr
 		}
 		transport.DialContext = fn
+	} else if dnsCfg := cc.DNS.Get(); dnsCfg != nil {
+		// Use the configured DNS server for hostname resolution. The dialer
+		// resolves hostnames through dnsCfg.toResolver(); resolution failures
+		// are returned and never fall back to the default resolver.
+		var d net.Dialer
+		d.Resolver = dnsCfg.toResolver()
+		if dnsCfg.Timeout > 0 {
+			d.Timeout = dnsCfg.Timeout
+		}
+		transport.DialContext = d.DialContext
 	}
 	if tlsCfg != nil {
 		transport.TLSClientConfig = tlsCfg

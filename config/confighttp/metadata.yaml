@@ -78,6 +78,14 @@ exported_configs:
         $ref: cookies_config
         optional: true
         description: Configures the cookie management of the HTTP client.
+      dns:
+        $ref: dns_resolver_config
+        optional: true
+        description: |
+          Configures the DNS resolver used by the HTTP client for hostname resolution.
+          When set, hostname resolution is performed by the given DNS server instead of
+          the host's default resolver, and resolution failures are surfaced rather than
+          silently falling back to the default resolver.
       force_attempt_http2:
         type: bool
         description: |
@@ -127,6 +135,23 @@ exported_configs:
         description: |
           Is used to set a limit to the maximum idle HTTP connections the host can keep open.
           If zero, [net/http.DefaultMaxIdleConnsPerHost] is used.
+    go_struct:
+      ignore_default: true
+  dns_resolver_config:
+    description: Describes the DNS resolver configuration.
+    properties:
+      endpoint:
+        type: string
+        description: |
+          Is the address of the DNS server to use for hostname resolution
+          (e.g. "1.1.1.1:53"). Must be an IP address and port; a zero value
+          means the default resolver is used.
+      timeout:
+        type: duration
+        description: |
+          Is the maximum amount of time a DNS query may take, including the
+          time spent connecting to the DNS server. Default is 0 (no timeout).
+        minimum: 0
     go_struct:
       ignore_default: true
   server_config:

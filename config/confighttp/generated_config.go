@@ -3,6 +3,7 @@
 package confighttp
 
 import (
+	"errors"
 	"time"
 
 	"go.opentelemetry.io/collector/config/configauth"
@@ -84,6 +85,12 @@ type ClientConfig struct {
 	// Cookies configures the cookie management of the HTTP client.
 	Cookies configoptional.Optional[CookiesConfig] `mapstructure:"cookies,omitempty"`
 
+	// DNS configures the DNS resolver used by the HTTP client for hostname resolution.
+	// When set, hostname resolution is performed by the given DNS server instead of
+	// the host's default resolver, and resolution failures are surfaced rather than
+	// silently falling back to the default resolver.
+	DNS configoptional.Optional[DNSResolverConfig] `mapstructure:"dns,omitempty"`
+
 	// ForceAttemptHTTP2 controls whether the HTTP transport is forced to use the HTTP/2 protocol.
 	// By default, this is set to true.
 	// NOTE: HTTP/2 does not support settings such as max_conns_per_host, max_idle_conns_per_host and max_idle_conns.
@@ -141,6 +148,33 @@ type CORSConfig struct {
 // Prefer this over an empty struct literal so default changes stay in sync automatically.
 func NewDefaultCORSConfig() CORSConfig {
 	return CORSConfig{}
+}
+
+// DNSResolverConfig describes the DNS resolver configuration.
+type DNSResolverConfig struct {
+	// Endpoint is the address of the DNS server to use for hostname resolution
+	// (e.g. "1.1.1.1:53"). Must be an IP address and port; a zero value
+	// means the default resolver is used.
+	Endpoint string `mapstructure:"endpoint,omitempty"`
+
+	// Timeout is the maximum amount of time a DNS query may take, including the
+	// time spent connecting to the DNS server. Default is 0 (no timeout).
+	Timeout time.Duration `mapstructure:"timeout,omitempty"`
+
+	// prevent unkeyed literal initialization
+	_ struct{}
+}
+
+// Validate validates the DNSResolverConfig fields according to schema annotations.
+// Called by confmap on config resolution. Don't call it explicitly to avoid duplicate errors.
+func (c *DNSResolverConfig) Validate() error {
+	var err error
+
+	if c.Timeout < 0 {
+		err = errors.Join(err, errors.New("timeout value must be greater than or equal to 0"))
+	}
+
+	return err
 }
 
 // KeepaliveClientConfig describes the keepalive configuration.

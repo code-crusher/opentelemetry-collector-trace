@@ -63,6 +63,10 @@ $defs:
         description: Dialer middleware is a handler customizing how the client will dial connections over TCP.
         optional: true
         $ref: /config/configmiddleware.config
+      dns:
+        description: DNS configures the DNS resolver used by the HTTP client for hostname resolution. When set, hostname resolution is performed by the given DNS server instead of the host's default resolver, and resolution failures are surfaced rather than silently falling back to the default resolver.
+        x-optional: true
+        $ref: dns_resolver_config
       endpoint:
         description: 'The target URL to send data to (e.g.: http://some.url:9411/v1/traces).'
         type: string
@@ -111,6 +115,18 @@ $defs:
       write_buffer_size:
         description: WriteBufferSize for HTTP client. See http.Transport.WriteBufferSize. Default is 0.
         type: integer
+  dns_resolver_config:
+    description: DNSResolverConfig describes the DNS resolver configuration.
+    type: object
+    properties:
+      endpoint:
+        description: Endpoint is the address of the DNS server to use for hostname resolution (e.g. "1.1.1.1:53"). Must be an IP address and port; a zero value means the default resolver is used.
+        type: string
+      timeout:
+        description: Timeout is the maximum amount of time a DNS query may take, including the time spent connecting to the DNS server. Default is 0 (no timeout).
+        type: string
+        x-customType: time.Duration
+        format: duration
   cors_config:
     description: CORSConfig configures a receiver for HTTP cross-origin resource sharing (CORS). See the underlying https://github.com/rs/cors package for details.
     type: object
