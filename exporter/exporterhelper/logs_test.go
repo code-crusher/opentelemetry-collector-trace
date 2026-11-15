@@ -38,6 +38,7 @@ import (
 	"go.opentelemetry.io/collector/exporter/exportertest"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/testdata"
+	"go.opentelemetry.io/collector/pipeline"
 )
 
 const (
@@ -190,6 +191,7 @@ func TestLogs_pLogModifiedDownStream_WithRecordMetrics(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String("exporter", fakeLogsName.String()),
+					attribute.String(internal.DataTypeKey, pipeline.SignalLogs.String()),
 				),
 				Value: int64(2),
 			},
@@ -338,6 +340,7 @@ func checkRecordedMetricsForLogs(t *testing.T, tt *componenttest.Telemetry, id c
 				{
 					Attributes: attribute.NewSet(
 						attribute.String("exporter", id.String()),
+						attribute.String(internal.DataTypeKey, pipeline.SignalLogs.String()),
 						attribute.String(string(semconv.ErrorTypeKey), "_OTHER"),
 						attribute.Bool(internal.ErrorPermanentKey, false),
 					),
@@ -350,6 +353,7 @@ func checkRecordedMetricsForLogs(t *testing.T, tt *componenttest.Telemetry, id c
 				{
 					Attributes: attribute.NewSet(
 						attribute.String("exporter", id.String()),
+						attribute.String(internal.DataTypeKey, pipeline.SignalLogs.String()),
 					),
 					Value: int64(numBatches * ld.LogRecordCount()),
 				},

@@ -30,14 +30,11 @@ func NewExporterObsMetrics(
 	}
 
 	exporterAttr := attribute.String(exporterKey, id.String())
-	// These sets intentionally preserve existing metric cardinality. See
-	// https://github.com/open-telemetry/opentelemetry-collector/issues/16049.
-	enqueueAttr := metric.WithAttributeSet(attribute.NewSet(exporterAttr))
-	senderAttr := metric.WithAttributeSet(attribute.NewSet(append(extraAttrs, exporterAttr)...))
-	queueAttr := metric.WithAttributeSet(attribute.NewSet(
-		exporterAttr,
-		attribute.String(dataTypeKey, signal.String()),
-	))
+	dataTypeAttr := attribute.String(dataTypeKey, signal.String())
+	// All queue and batch metrics report the exporter, data_type, and any
+	// attributes configured with exporterhelper.WithAttrs.
+	// See https://github.com/open-telemetry/opentelemetry-collector/issues/16049.
+	attr := metric.WithAttributeSet(attribute.NewSet(append(extraAttrs, exporterAttr, dataTypeAttr)...))
 	shutdown := sync.OnceFunc(tb.Shutdown)
 
 	var enqueueFailedInst, itemsSentInst, itemsFailedInst metric.Int64Counter
@@ -85,21 +82,21 @@ func NewExporterObsMetrics(
 		RecordIntFunc: func(ctx context.Context, m queuebatchtelemetry.Metric, value int64, options ...metric.AddOption) {
 			switch m {
 			case queuebatchtelemetry.MetricEnqueueFailure:
-				enqueueFailedInst.Add(ctx, value, enqueueAttr)
+				enqueueFailedInst.Add(ctx, value, attr)
 			case queuebatchtelemetry.MetricEnqueueSize:
-				tb.ExporterEnqueueSize.Record(ctx, value, enqueueAttr)
+				tb.ExporterEnqueueSize.Record(ctx, value, attr)
 			case queuebatchtelemetry.MetricEnqueueSizeBytes:
-				tb.ExporterEnqueueSizeBytes.Record(ctx, value, enqueueAttr)
+				tb.ExporterEnqueueSizeBytes.Record(ctx, value, attr)
 			case queuebatchtelemetry.MetricBatchSendSize:
-				tb.ExporterQueueBatchSendSize.Record(ctx, value, senderAttr)
+				tb.ExporterQueueBatchSendSize.Record(ctx, value, attr)
 			case queuebatchtelemetry.MetricBatchSendSizeBytes:
-				tb.ExporterQueueBatchSendSizeBytes.Record(ctx, value, senderAttr)
+				tb.ExporterQueueBatchSendSizeBytes.Record(ctx, value, attr)
 			case queuebatchtelemetry.MetricInFlight:
-				tb.ExporterInFlightRequests.Add(ctx, value, queueAttr)
+				tb.ExporterInFlightRequests.Add(ctx, value, attr)
 			case queuebatchtelemetry.MetricSent:
-				itemsSentInst.Add(ctx, value, senderAttr)
+				itemsSentInst.Add(ctx, value, attr)
 			case queuebatchtelemetry.MetricSendFailure:
-				itemsFailedInst.Add(ctx, value, append([]metric.AddOption{senderAttr}, options...)...)
+				itemsFailedInst.Add(ctx, value, append([]metric.AddOption{attr}, options...)...)
 			}
 		},
 		RegisterIntFunc: func(m queuebatchtelemetry.Metric, value func() int64) error {
@@ -107,22 +104,22 @@ func NewExporterObsMetrics(
 			switch m {
 			case queuebatchtelemetry.MetricQueueSize:
 				err = tb.RegisterExporterQueueSizeCallback(func(_ context.Context, o metric.Int64Observer) error {
-					o.Observe(value(), queueAttr)
+					o.Observe(value(), attr)
 					return nil
 				})
 			case queuebatchtelemetry.MetricQueueCapacity:
 				err = tb.RegisterExporterQueueCapacityCallback(func(_ context.Context, o metric.Int64Observer) error {
-					o.Observe(value(), queueAttr)
+					o.Observe(value(), attr)
 					return nil
 				})
 			case queuebatchtelemetry.MetricPartitionCacheSize:
 				err = tb.RegisterExporterQueueBatchPartitionCacheSizeCallback(func(_ context.Context, o metric.Int64Observer) error {
-					o.Observe(value(), queueAttr)
+					o.Observe(value(), attr)
 					return nil
 				})
 			case queuebatchtelemetry.MetricPartitionCacheCapacity:
 				err = tb.RegisterExporterQueueBatchPartitionCacheCapacityCallback(func(_ context.Context, o metric.Int64Observer) error {
-					o.Observe(value(), queueAttr)
+					o.Observe(value(), attr)
 					return nil
 				})
 			default:

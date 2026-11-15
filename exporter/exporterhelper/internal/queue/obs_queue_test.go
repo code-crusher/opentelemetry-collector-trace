@@ -107,6 +107,7 @@ func TestObsQueueLogsFailure(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String(exporterKey, exporterID.String()),
+					attribute.String(dataTypeKey, pipeline.SignalLogs.String()),
 				),
 				Value: int64(2),
 			},
@@ -162,6 +163,7 @@ func TestObsQueueTracesFailure(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String(exporterKey, exporterID.String()),
+					attribute.String(dataTypeKey, pipeline.SignalTraces.String()),
 				),
 				Value: int64(12),
 			},
@@ -217,6 +219,7 @@ func TestObsQueueMetricsFailure(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String(exporterKey, exporterID.String()),
+					attribute.String(dataTypeKey, pipeline.SignalMetrics.String()),
 				),
 				Value: int64(22),
 			},
@@ -272,6 +275,7 @@ func TestObsQueueProfilesFailure(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String(exporterKey, exporterID.String()),
+					attribute.String(dataTypeKey, xpipeline.SignalProfiles.String()),
 				),
 				Value: int64(22),
 			},
@@ -294,6 +298,7 @@ func TestObsQueueLogsBatchSize(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String(exporterKey, exporterID.String()),
+					attribute.String(dataTypeKey, pipeline.SignalLogs.String()),
 				),
 				Count:        1,
 				Bounds:       []float64{10, 25, 50, 75, 100, 250, 500, 750, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000, 30000, 50000, 100000},
@@ -321,6 +326,7 @@ func TestObsQueueTracesBatchSize(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String(exporterKey, exporterID.String()),
+					attribute.String(dataTypeKey, pipeline.SignalTraces.String()),
 				),
 				Count:        1,
 				Bounds:       []float64{10, 25, 50, 75, 100, 250, 500, 750, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000, 30000, 50000, 100000},
@@ -348,6 +354,7 @@ func TestObsQueueMetricsBatchSize(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String(exporterKey, exporterID.String()),
+					attribute.String(dataTypeKey, pipeline.SignalMetrics.String()),
 				),
 				Count:        1,
 				Bounds:       []float64{10, 25, 50, 75, 100, 250, 500, 750, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000, 30000, 50000, 100000},
@@ -375,6 +382,7 @@ func TestObsQueueProfilesBatchSize(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String(exporterKey, exporterID.String()),
+					attribute.String(dataTypeKey, xpipeline.SignalProfiles.String()),
 				),
 				Count:        1,
 				Bounds:       []float64{10, 25, 50, 75, 100, 250, 500, 750, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000, 30000, 50000, 100000},

@@ -145,6 +145,7 @@ func TestExportTraceFailureAttributes(t *testing.T) {
 
 			wantAttrs := attribute.NewSet(
 				attribute.String("exporter", exporterID.String()),
+				attribute.String(DataTypeKey, pipeline.SignalTraces.String()),
 				attribute.String(string(semconv.ErrorTypeKey), tt.expectedType),
 				attribute.Bool(ErrorPermanentKey, tt.expectedPerm),
 			)
@@ -227,6 +228,7 @@ func TestExportTraceFailureAttributesGRPCError(t *testing.T) {
 
 			wantAttrs := attribute.NewSet(
 				attribute.String("exporter", exporterID.String()),
+				attribute.String(DataTypeKey, pipeline.SignalTraces.String()),
 				attribute.String(string(semconv.ErrorTypeKey), tt.expectedType),
 				attribute.Bool(ErrorPermanentKey, tt.isPermanent),
 			)
@@ -312,6 +314,7 @@ func TestExportTraceDataOp(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String("exporter", exporterID.String()),
+					attribute.String(DataTypeKey, pipeline.SignalTraces.String()),
 				),
 				Value: int64(sentSpans),
 			},
@@ -321,6 +324,7 @@ func TestExportTraceDataOp(t *testing.T) {
 	if failedToSendSpans > 0 {
 		wantAttrs := attribute.NewSet(
 			attribute.String("exporter", exporterID.String()),
+			attribute.String(DataTypeKey, pipeline.SignalTraces.String()),
 			attribute.String(string(semconv.ErrorTypeKey), "_OTHER"),
 			attribute.Bool(ErrorPermanentKey, false),
 		)
@@ -405,6 +409,7 @@ func TestExportMetricsOp(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String("exporter", exporterID.String()),
+					attribute.String(DataTypeKey, pipeline.SignalMetrics.String()),
 				),
 				Value: int64(sentMetricPoints),
 			},
@@ -414,6 +419,7 @@ func TestExportMetricsOp(t *testing.T) {
 	if failedToSendMetricPoints > 0 {
 		wantAttrs := attribute.NewSet(
 			attribute.String("exporter", exporterID.String()),
+			attribute.String(DataTypeKey, pipeline.SignalMetrics.String()),
 			attribute.String(string(semconv.ErrorTypeKey), "_OTHER"),
 			attribute.Bool(ErrorPermanentKey, false),
 		)
@@ -498,6 +504,7 @@ func TestExportLogsOp(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String("exporter", exporterID.String()),
+					attribute.String(DataTypeKey, pipeline.SignalLogs.String()),
 				),
 				Value: int64(sentLogRecords),
 			},
@@ -507,6 +514,7 @@ func TestExportLogsOp(t *testing.T) {
 	if failedToSendLogRecords > 0 {
 		wantAttrs := attribute.NewSet(
 			attribute.String("exporter", exporterID.String()),
+			attribute.String(DataTypeKey, pipeline.SignalLogs.String()),
 			attribute.String(string(semconv.ErrorTypeKey), "_OTHER"),
 			attribute.Bool(ErrorPermanentKey, false),
 		)
@@ -713,6 +721,7 @@ func TestExportProfilesOp(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String("exporter", exporterID.String()),
+					attribute.String(DataTypeKey, xpipeline.SignalProfiles.String()),
 				),
 				Value: int64(sentProfileRecords),
 			},
@@ -722,6 +731,7 @@ func TestExportProfilesOp(t *testing.T) {
 	if failedToSendProfileRecords > 0 {
 		wantAttrs := attribute.NewSet(
 			attribute.String("exporter", exporterID.String()),
+			attribute.String(DataTypeKey, xpipeline.SignalProfiles.String()),
 			attribute.String(string(semconv.ErrorTypeKey), "_OTHER"),
 			attribute.Bool(ErrorPermanentKey, false),
 		)
@@ -817,7 +827,10 @@ func testBatchSize(t *testing.T, signal pipeline.Signal, req *requesttest.FakeRe
 	require.NoError(t, err)
 	require.NoError(t, obsrep.Send(context.Background(), req))
 
-	attrs := attribute.NewSet(attribute.String(ExporterKey, exporterID.String()))
+	attrs := attribute.NewSet(
+		attribute.String(ExporterKey, exporterID.String()),
+		attribute.String(DataTypeKey, signal.String()),
+	)
 	bounds := []float64{10, 25, 50, 75, 100, 250, 500, 750, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000, 30000, 50000, 100000}
 
 	itemsBuckets := bucketCountsFor(int64(req.Items), bounds)

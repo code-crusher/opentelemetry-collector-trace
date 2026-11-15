@@ -177,6 +177,7 @@ func TestBaseExporterExtraAttrs(t *testing.T) {
 		{
 			Attributes: attribute.NewSet(
 				attribute.String("exporter", set.ID.String()),
+				attribute.String(DataTypeKey, pipeline.SignalMetrics.String()),
 				attribute.String("test", "value"),
 				attribute.Bool("other", true),
 			),

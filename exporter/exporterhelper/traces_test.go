@@ -39,6 +39,7 @@ import (
 	queuebatchtelemetry "go.opentelemetry.io/collector/internal/telemetry/queuebatch"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/collector/pdata/testdata"
+	"go.opentelemetry.io/collector/pipeline"
 )
 
 const (
@@ -211,6 +212,7 @@ func TestTraces_pLogModifiedDownStream_WithRecordMetrics(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String(internal.ExporterKey, fakeTracesName.String()),
+					attribute.String(internal.DataTypeKey, pipeline.SignalTraces.String()),
 				),
 				Value: int64(2),
 			},
@@ -382,6 +384,7 @@ func checkRecordedMetricsForTraces(t *testing.T, tt *componenttest.Telemetry, id
 				{
 					Attributes: attribute.NewSet(
 						attribute.String(internal.ExporterKey, id.String()),
+						attribute.String(internal.DataTypeKey, pipeline.SignalTraces.String()),
 						attribute.String(string(semconv.ErrorTypeKey), "_OTHER"),
 						attribute.Bool(internal.ErrorPermanentKey, false),
 					),
@@ -394,6 +397,7 @@ func checkRecordedMetricsForTraces(t *testing.T, tt *componenttest.Telemetry, id
 				{
 					Attributes: attribute.NewSet(
 						attribute.String(internal.ExporterKey, id.String()),
+						attribute.String(internal.DataTypeKey, pipeline.SignalTraces.String()),
 					),
 					Value: int64(numBatches * td.SpanCount()),
 				},

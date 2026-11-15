@@ -38,6 +38,7 @@ import (
 	"go.opentelemetry.io/collector/exporter/exportertest"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/testdata"
+	"go.opentelemetry.io/collector/pipeline"
 )
 
 const (
@@ -205,6 +206,7 @@ func TestMetrics_pMetricModifiedDownStream_WithRecordMetrics(t *testing.T) {
 			{
 				Attributes: attribute.NewSet(
 					attribute.String(internal.ExporterKey, fakeMetricsName.String()),
+					attribute.String(internal.DataTypeKey, pipeline.SignalMetrics.String()),
 				),
 				Value: int64(4),
 			},
@@ -357,6 +359,7 @@ func checkRecordedMetricsForMetrics(t *testing.T, tt *componenttest.Telemetry, i
 				{
 					Attributes: attribute.NewSet(append(extraAttributes,
 						attribute.String(internal.ExporterKey, id.String()),
+						attribute.String(internal.DataTypeKey, pipeline.SignalMetrics.String()),
 						attribute.String(string(semconv.ErrorTypeKey), "_OTHER"),
 						attribute.Bool(internal.ErrorPermanentKey, false))...),
 					Value: numPoints,
@@ -367,7 +370,8 @@ func checkRecordedMetricsForMetrics(t *testing.T, tt *componenttest.Telemetry, i
 			[]metricdata.DataPoint[int64]{
 				{
 					Attributes: attribute.NewSet(append(extraAttributes,
-						attribute.String(internal.ExporterKey, id.String()))...),
+						attribute.String(internal.ExporterKey, id.String()),
+						attribute.String(internal.DataTypeKey, pipeline.SignalMetrics.String()))...),
 					Value: numPoints,
 				},
 			}, metricdatatest.IgnoreTimestamp(), metricdatatest.IgnoreExemplars())

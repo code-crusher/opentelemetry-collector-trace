@@ -125,7 +125,7 @@ func TestExporterObsMetricsUnsupportedMetric(t *testing.T) {
 	obsMetrics.Shutdown()
 }
 
-func TestExporterObsMetricsAttributeCompatibility(t *testing.T) {
+func TestExporterObsMetricsConsistentAttributes(t *testing.T) {
 	tt := componenttest.NewTelemetry()
 	t.Cleanup(func() { require.NoError(t, tt.Shutdown(context.Background())) })
 
@@ -145,19 +145,23 @@ func TestExporterObsMetricsAttributeCompatibility(t *testing.T) {
 	obsMetrics.RecordInt(ctx, queuebatchtelemetry.MetricBatchSendSize, 3)
 	obsMetrics.RecordInt(ctx, queuebatchtelemetry.MetricSent, 4)
 
-	exporterAttr := attribute.String(exporterKey, exporterID.String())
-	enqueueAttrs := attribute.NewSet(exporterAttr)
-	senderAttrs := attribute.NewSet(exporterAttr, extraAttr)
+	// All queue and batch metrics carry the exporter, data_type, and any
+	// WithAttrs() attributes.
+	attrs := attribute.NewSet(
+		attribute.String(exporterKey, exporterID.String()),
+		attribute.String(dataTypeKey, pipeline.SignalTraces.String()),
+		extraAttr,
+	)
 	metadatatest.AssertEqualExporterEnqueueFailedSpans(t, tt,
-		[]metricdata.DataPoint[int64]{{Attributes: enqueueAttrs, Value: 1}},
+		[]metricdata.DataPoint[int64]{{Attributes: attrs, Value: 1}},
 		metricdatatest.IgnoreTimestamp(), metricdatatest.IgnoreExemplars())
 	metadatatest.AssertEqualExporterEnqueueSize(t, tt,
-		[]metricdata.HistogramDataPoint[int64]{{Attributes: enqueueAttrs}},
+		[]metricdata.HistogramDataPoint[int64]{{Attributes: attrs}},
 		metricdatatest.IgnoreValue(), metricdatatest.IgnoreTimestamp(), metricdatatest.IgnoreExemplars())
 	metadatatest.AssertEqualExporterQueueBatchSendSize(t, tt,
-		[]metricdata.HistogramDataPoint[int64]{{Attributes: senderAttrs}},
+		[]metricdata.HistogramDataPoint[int64]{{Attributes: attrs}},
 		metricdatatest.IgnoreValue(), metricdatatest.IgnoreTimestamp(), metricdatatest.IgnoreExemplars())
 	metadatatest.AssertEqualExporterSentSpans(t, tt,
-		[]metricdata.DataPoint[int64]{{Attributes: senderAttrs, Value: 4}},
+		[]metricdata.DataPoint[int64]{{Attributes: attrs, Value: 4}},
 		metricdatatest.IgnoreTimestamp(), metricdatatest.IgnoreExemplars())
 }
