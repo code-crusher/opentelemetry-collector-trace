@@ -39,12 +39,6 @@ func TestCombineCollectorSchema_LayoutAndValidation(t *testing.T) {
 				},
 			},
 		},
-		Service: &JSONSchema{
-			Type: "object",
-			Properties: map[string]*JSONSchema{
-				"pipelines": {Type: "object"},
-			},
-		},
 	})
 	require.NoError(t, err)
 	require.Contains(t, schema.Properties, "receivers")
@@ -289,6 +283,196 @@ func TestCombineCollectorSchema_NilSchemaDeprecatedKeepsMarker(t *testing.T) {
 	compiled := compileSchema(t, schema)
 	require.NoError(t, compiled.Validate(unmarshalJSON(t, `{"extensions": {"healthcheck": null}}`)))
 	require.NoError(t, compiled.Validate(unmarshalJSON(t, `{"extensions": {"healthcheck/1": {"endpoint": "x"}}}`)))
+}
+
+// distributionParts returns schema parts for a distribution with an otlp
+// receiver, a batch processor, an otlp and a debug exporter, a forward
+// connector, a health_check extension, and a deprecated exporter alias.
+func distributionParts() CollectorSchemaParts {
+	return CollectorSchemaParts{
+		Receivers: []CollectorComponentSchema{{Type: "otlp"}},
+		Processors: []CollectorComponentSchema{
+			{Type: "batch"},
+		},
+		Exporters: []CollectorComponentSchema{
+			{Type: "otlp"},
+			{Type: "otlp_http", DeprecatedType: "otlphttp"},
+			{Type: "debug"},
+		},
+		Connectors: []CollectorComponentSchema{{Type: "forward"}},
+		Extensions: []CollectorComponentSchema{{Type: "health_check"}},
+	}
+}
+
+func TestCombineCollectorSchema_ServiceSection(t *testing.T) {
+	t.Parallel()
+
+	schema, err := CombineCollectorSchema(distributionParts())
+	require.NoError(t, err)
+
+	compiled := compileSchema(t, schema)
+
+	t.Run("valid pipelines", func(t *testing.T) {
+		require.NoError(t, compiled.Validate(unmarshalJSON(t, `{
+			"service": {
+				"telemetry": {"metrics": {"level": "basic"}},
+				"extensions": ["health_check"],
+				"pipelines": {
+					"traces": {
+						"receivers": ["otlp"],
+						"processors": ["batch"],
+						"exporters": ["otlp", "debug"]
+					},
+					"metrics/extra": {
+						"receivers": ["otlp", "forward"],
+						"exporters": ["forward"]
+					},
+					"logs": {
+						"receivers": ["forward/myconn"],
+						"exporters": ["otlp_http"]
+					}
+				}
+			}
+		}`)))
+	})
+
+	t.Run("pipeline reference to unknown component", func(t *testing.T) {
+		for name, config := range map[string]string{
+			"unknown receiver": `{
+				"service": {"pipelines": {"traces": {
+					"receivers": ["prometheus"], "exporters": ["debug"]
+				}}}
+			}`,
+			"unknown processor": `{
+				"service": {"pipelines": {"traces": {
+					"receivers": ["otlp"], "processors": ["memory_limiter"], "exporters": ["debug"]
+				}}}
+			}`,
+			"unknown exporter": `{
+				"service": {"pipelines": {"traces": {
+					"receivers": ["otlp"], "exporters": ["zipkin"]
+				}}}
+			}`,
+			"processor as receiver": `{
+				"service": {"pipelines": {"traces": {
+					"receivers": ["batch"], "exporters": ["debug"]
+				}}}
+			}`,
+			"unknown extension": `{
+				"service": {"extensions": ["zpages"]}
+			}`,
+			"pipeline signal typo": `{
+				"service": {"pipelines": {"trace": {
+					"receivers": ["otlp"], "exporters": ["debug"]
+				}}}
+			}`,
+			"unknown pipeline key": `{
+				"service": {"pipelines": {"traces": {
+					"receivers": ["otlp"], "exporters": ["debug"], "unknown": true
+				}}}
+			}`,
+			"unknown service key": `{
+				"service": {"unknown_section": true}
+			}`,
+		} {
+			t.Run(name, func(t *testing.T) {
+				require.Error(t, compiled.Validate(unmarshalJSON(t, config)))
+			})
+		}
+	})
+
+	t.Run("pipelines without exporters", func(t *testing.T) {
+		require.Error(t, compiled.Validate(unmarshalJSON(t, `{
+			"service": {"pipelines": {"traces": {"receivers": ["otlp"]}}}
+		}`)))
+	})
+
+	t.Run("pipelines without receivers", func(t *testing.T) {
+		require.Error(t, compiled.Validate(unmarshalJSON(t, `{
+			"service": {"pipelines": {"traces": {"exporters": ["debug"]}}}
+		}`)))
+	})
+
+	t.Run("duplicate processor in pipeline", func(t *testing.T) {
+		require.Error(t, compiled.Validate(unmarshalJSON(t, `{
+			"service": {"pipelines": {"traces": {
+				"receivers": ["otlp"], "processors": ["batch", "batch"], "exporters": ["debug"]
+			}}}
+		}`)))
+	})
+
+	t.Run("deprecated exporter type in pipeline", func(t *testing.T) {
+		require.NoError(t, compiled.Validate(unmarshalJSON(t, `{
+			"service": {"pipelines": {"traces": {
+				"receivers": ["otlp"], "exporters": ["otlphttp"]
+			}}}
+		}`)))
+	})
+
+	t.Run("null extensions list", func(t *testing.T) {
+		require.NoError(t, compiled.Validate(unmarshalJSON(t, `{
+			"service": {"pipelines": null, "extensions": null}
+		}`)))
+		require.NoError(t, compiled.Validate(unmarshalYAML(t, "service:\n  pipelines:\n  extensions:\n")))
+	})
+}
+
+func TestCombineCollectorSchema_ServiceSectionStructural(t *testing.T) {
+	t.Parallel()
+
+	schema, err := CombineCollectorSchema(distributionParts())
+	require.NoError(t, err)
+
+	service := schema.Properties[string(CollectorSectionService)]
+	require.NotNil(t, service)
+	require.Equal(t, "object", service.Type)
+	require.Contains(t, service.Properties, "telemetry")
+	require.Contains(t, service.Properties, "extensions")
+	require.Contains(t, service.Properties, "pipelines")
+	require.NotNil(t, service.AdditionalProperties.Not)
+
+	// The telemetry section is defined by the distribution's telemetry
+	// factory, so it is left unconstrained.
+	telemetry, err := service.Properties["telemetry"].MarshalJSON()
+	require.NoError(t, err)
+	require.JSONEq(t, `true`, string(telemetry))
+
+	pipelines := service.Properties["pipelines"]
+	require.NotNil(t, pipelines)
+	require.Len(t, pipelines.AnyOf, 2)
+	require.Equal(t, "object", pipelines.AnyOf[0].Type)
+	require.Equal(t, "null", pipelines.AnyOf[1].Type)
+
+	var pipelinePattern string
+	var pipeline *JSONSchema
+	for pattern, p := range pipelines.AnyOf[0].PatternProperties {
+		pipelinePattern, pipeline = pattern, p
+	}
+	require.Regexp(t, `^\^\(\?:traces\|metrics\|logs\|profiles\)\(\?:/`, pipelinePattern)
+	require.Equal(t, []string{"receivers", "exporters"}, pipeline.Required)
+	require.Equal(t, 1, *pipeline.Properties["receivers"].MinItems)
+	require.Equal(t, 1, *pipeline.Properties["exporters"].MinItems)
+	require.True(t, pipeline.Properties["processors"].UniqueItems)
+}
+
+func TestCombineCollectorSchema_ServicePipelineMergesSections(t *testing.T) {
+	t.Parallel()
+
+	// A component type may appear in two sections the service section merges,
+	// e.g. the same type as exporter and connector: both references stay
+	// valid, matching otelcol.Config.Validate which accepts either.
+	schema, err := CombineCollectorSchema(CollectorSchemaParts{
+		Exporters:  []CollectorComponentSchema{{Type: "otlp"}},
+		Connectors: []CollectorComponentSchema{{Type: "otlp"}},
+	})
+	require.NoError(t, err)
+
+	compiled := compileSchema(t, schema)
+	require.NoError(t, compiled.Validate(unmarshalJSON(t, `{
+		"service": {"pipelines": {"traces": {
+			"receivers": ["otlp"], "exporters": ["otlp"]
+		}}}
+	}`)))
 }
 
 func compileSchema(t *testing.T, schema *JSONSchema) *jsonschema.Schema {
