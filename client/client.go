@@ -82,6 +82,7 @@ import (
 	"iter"
 	"maps"
 	"net"
+	"slices"
 	"strings"
 )
 
@@ -138,6 +139,10 @@ func FromContext(ctx context.Context) Info {
 }
 
 // Metadata is an immutable map, meant to contain request metadata.
+//
+// To derive a new Metadata from an existing one, use NewMetadataBuilder: it
+// copies the existing map only once, whereas rebuilding the map and passing it
+// to NewMetadata copies it twice.
 type Metadata struct {
 	data map[string][]string
 }
@@ -151,6 +156,50 @@ func NewMetadata(md map[string][]string) Metadata {
 	return Metadata{
 		data: c,
 	}
+}
+
+// MetadataBuilder builds a new Metadata, optionally based on an existing one.
+// It is meant to derive a new Metadata with a few extra keys without copying
+// the whole underlying map twice.
+//
+// A MetadataBuilder is not safe for concurrent use. Its zero value is an empty
+// builder, ready for use.
+type MetadataBuilder struct {
+	data map[string][]string
+}
+
+// NewMetadataBuilder returns a builder initialized with the contents of base.
+// Keys set on the builder take precedence over the keys from base.
+func NewMetadataBuilder(base Metadata) *MetadataBuilder {
+	if len(base.data) == 0 {
+		return &MetadataBuilder{}
+	}
+	b := &MetadataBuilder{
+		data: make(map[string][]string, len(base.data)),
+	}
+	maps.Copy(b.data, base.data)
+	return b
+}
+
+// Set adds the key to the Metadata being built, replacing any value previously
+// set for it, either via this builder or in the base Metadata. The key is
+// case-insensitive and stored lowercased. The values are copied, so the caller
+// is free to modify the given slice afterwards.
+func (b *MetadataBuilder) Set(key string, values ...string) *MetadataBuilder {
+	if b.data == nil {
+		b.data = make(map[string][]string, 1)
+	}
+	b.data[strings.ToLower(key)] = slices.Clone(values)
+	return b
+}
+
+// Build returns the Metadata built so far. The builder transfers ownership of
+// its data to the returned Metadata and is reset to an empty state, so it can
+// be reused to build another Metadata without affecting the previous one.
+func (b *MetadataBuilder) Build() Metadata {
+	md := Metadata{data: b.data}
+	b.data = nil
+	return md
 }
 
 // Keys returns an iterator for the metadata keys.

@@ -75,6 +75,24 @@ func Example_authenticator() {
 	_ = client.NewContext(ctx, cl)
 }
 
+func ExampleMetadataBuilder() {
+	// Existing metadata, typically obtained from the context.
+	base := client.NewMetadata(map[string][]string{"tenant": {"acme"}})
+
+	// Derive a new Metadata with an extra key. The base metadata is copied
+	// only once, and remains unchanged.
+	md := client.NewMetadataBuilder(base).
+		Set("routing-key", "us-east").
+		Build()
+
+	fmt.Println(md.Get("tenant"))
+	fmt.Println(md.Get("routing-key"))
+
+	// Output:
+	// [acme]
+	// [us-east]
+}
+
 type exampleAuthData struct {
 	username string
 }
