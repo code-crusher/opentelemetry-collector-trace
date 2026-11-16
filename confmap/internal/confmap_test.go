@@ -989,6 +989,84 @@ func TestUnmarshalOwnThroughEmbeddedSquashedStruct(t *testing.T) {
 	require.Equal(t, "bar", cfg.Cfg.Foo)
 }
 
+// EmbeddedUnmarshaler is exported so that it can be embedded by the structs below,
+// mirroring how exported config structs such as confighttp.ServerConfig are embedded.
+// The embedded field must be exported for unmarshalerEmbeddedStructsHookFunc to see it.
+type EmbeddedUnmarshaler struct {
+	Endpoint string `mapstructure:"endpoint"`
+}
+
+func (s *EmbeddedUnmarshaler) Unmarshal(conf *Conf) error {
+	return conf.Unmarshal(s, WithIgnoreUnused())
+}
+
+type configWithSquashedEmbeddedUnmarshaler struct {
+	EmbeddedUnmarshaler `mapstructure:",squash"`
+	Path                string `mapstructure:"path"`
+}
+
+// Test that a struct's own fields are decoded when it embeds, with squash, a struct
+// implementing Unmarshaler. The embedded type's Unmarshal method is promoted to the outer
+// struct, which previously caused the outer struct's fields to be silently dropped.
+// See https://github.com/open-telemetry/opentelemetry-collector/issues/15985
+func TestUnmarshalFieldsWithSquashedEmbeddedUnmarshaler(t *testing.T) {
+	c := NewFromStringMap(map[string]any{
+		"endpoint": "0.0.0.0:4327",
+		"path":     "/events",
+	})
+	cfg := &configWithSquashedEmbeddedUnmarshaler{}
+	require.NoError(t, c.Unmarshal(cfg))
+	assert.Equal(t, "0.0.0.0:4327", cfg.Endpoint)
+	assert.Equal(t, "/events", cfg.Path)
+}
+
+// Test the same as above, with the embedded field being a pointer.
+func TestUnmarshalFieldsWithSquashedEmbeddedPointerUnmarshaler(t *testing.T) {
+	c := NewFromStringMap(map[string]any{
+		"endpoint": "0.0.0.0:4327",
+		"path":     "/events",
+	})
+	cfg := &configWithSquashedEmbeddedPointerUnmarshaler{
+		EmbeddedUnmarshaler: &EmbeddedUnmarshaler{},
+	}
+	require.NoError(t, c.Unmarshal(cfg))
+	assert.Equal(t, "0.0.0.0:4327", cfg.Endpoint)
+	assert.Equal(t, "/events", cfg.Path)
+}
+
+type configWithSquashedEmbeddedPointerUnmarshaler struct {
+	*EmbeddedUnmarshaler `mapstructure:",squash"`
+	Path                 string `mapstructure:"path"`
+}
+
+// Test that an Unmarshal method declared on the outer struct still takes precedence over a
+// method promoted from a squashed embedded field implementing Unmarshaler.
+func TestUnmarshalDeclaredMethodWithSquashedEmbeddedUnmarshaler(t *testing.T) {
+	c := NewFromStringMap(map[string]any{
+		"endpoint": "0.0.0.0:4327",
+		"path":     "/events",
+	})
+	cfg := &configWithDeclaredAndSquashedEmbeddedUnmarshaler{}
+	require.NoError(t, c.Unmarshal(cfg))
+	assert.Equal(t, "0.0.0.0:4327", cfg.Endpoint)
+	assert.Equal(t, "/events", cfg.Path)
+	assert.True(t, cfg.declaredUnmarshalCalled)
+}
+
+type configWithDeclaredAndSquashedEmbeddedUnmarshaler struct {
+	EmbeddedUnmarshaler     `mapstructure:",squash"`
+	Path                    string `mapstructure:"path"`
+	declaredUnmarshalCalled bool
+}
+
+func (c *configWithDeclaredAndSquashedEmbeddedUnmarshaler) Unmarshal(conf *Conf) error {
+	if err := c.EmbeddedUnmarshaler.Unmarshal(conf); err != nil {
+		return err
+	}
+	c.declaredUnmarshalCalled = true
+	return conf.Unmarshal(c, WithIgnoreUnused())
+}
+
 type recursive struct {
 	Foo string `mapstructure:"foo"`
 }
