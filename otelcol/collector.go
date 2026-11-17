@@ -286,9 +286,46 @@ func (col *Collector) setupConfigurationComponents(ctx context.Context) error {
 	return nil
 }
 
-func (col *Collector) reloadConfiguration(ctx context.Context) error {
+// configChangeSource identifies what notified the Collector that its
+// configuration changed.
+type configChangeSource string
+
+const (
+	// configChangeSourceProvider is a confmap provider watch event.
+	configChangeSourceProvider configChangeSource = "provider"
+	// configChangeSourceSignal is an OS signal sent to the Collector.
+	configChangeSourceSignal configChangeSource = "signal"
+)
+
+// configChange describes a detected configuration change so that the event can
+// be attributed in the Collector's logs.
+type configChange struct {
+	// source is what notified the Collector of the change.
+	source configChangeSource
+	// signal is the OS signal that triggered the change. It is empty unless
+	// source is configChangeSourceSignal.
+	signal string
+}
+
+// configChangeLogger returns a logger that attributes every record to the
+// configuration change it describes. The change and its outcome are reported
+// on the same logger, so a single event can be followed from detection to the
+// applied or rejected configuration.
+func configChangeLogger(logger *zap.Logger, change configChange) *zap.Logger {
+	fields := []zap.Field{zap.String("source", string(change.source))}
+	if change.signal != "" {
+		fields = append(fields, zap.String("signal", change.signal))
+	}
+	return logger.With(fields...)
+}
+
+func (col *Collector) reloadConfiguration(ctx context.Context, change configChange) error {
+	// Capture the logger before the reload: a failed setup replaces col.service
+	// with a nil service, so the outcome must be recorded on this logger.
+	logger := configChangeLogger(col.service.Logger(), change)
+
 	if service.ReceiverPartialReloadEnabled() && col.currentFingerprint != nil {
-		reloaded, err := col.tryPartialReceiverReload(ctx)
+		reloaded, err := col.tryPartialReceiverReload(ctx, logger)
 		if reloaded && err == nil {
 			// Partial reload succeeded; the service keeps running.
 			return nil
@@ -301,13 +338,13 @@ func (col *Collector) reloadConfiguration(ctx context.Context) error {
 			// below, which discards the existing service and graph entirely
 			// and rebuilds from scratch, consistent with how a non-receiver
 			// config change is handled.
-			col.service.Logger().Warn("Partial receiver reload failed, falling back to full reload", zap.Error(err))
+			logger.Warn("Partial receiver reload failed, falling back to full reload", zap.Error(err))
 		}
 		// Otherwise, the config change was not receiver-only; fall through to
 		// a full reload.
 	}
 
-	col.service.Logger().Warn("Config updated, restart service")
+	logger.Warn("Config updated, restart service")
 	col.setCollectorState(StateClosing)
 
 	if err := col.service.Shutdown(ctx); err != nil {
@@ -315,6 +352,7 @@ func (col *Collector) reloadConfiguration(ctx context.Context) error {
 	}
 
 	if err := col.setupConfigurationComponents(ctx); err != nil {
+		logger.Error("Failed to apply updated configuration", zap.Error(err))
 		return fmt.Errorf("failed to setup configuration components: %w", err)
 	}
 
@@ -325,7 +363,8 @@ func (col *Collector) reloadConfiguration(ctx context.Context) error {
 // the configuration change is limited to receivers. The bool return indicates
 // whether a partial reload was attempted (true) or the change requires a full
 // reload (false). When true, the error indicates whether the reload succeeded.
-func (col *Collector) tryPartialReceiverReload(ctx context.Context) (bool, error) {
+// The logger carries the configuration change event's attribution.
+func (col *Collector) tryPartialReceiverReload(ctx context.Context, logger *zap.Logger) (bool, error) {
 	factories, err := col.set.Factories()
 	if err != nil {
 		return false, err
@@ -349,7 +388,7 @@ func (col *Collector) tryPartialReceiverReload(ctx context.Context) (bool, error
 		return false, nil
 	}
 
-	col.service.Logger().Info("Config updated, performing partial receiver reload")
+	logger.Warn("Config updated, performing partial receiver reload")
 	if err = col.service.UpdateReceivers(ctx,
 		changedReceivers(*col.currentFingerprint, newFingerprint),
 		newCfg.Receivers,
@@ -466,7 +505,7 @@ LOOP:
 				col.service.Logger().Error("Config watch failed", zap.Error(err))
 				break LOOP
 			}
-			if err := col.reloadConfiguration(ctx); err != nil {
+			if err := col.reloadConfiguration(ctx, configChange{source: configChangeSourceProvider}); err != nil {
 				return err
 			}
 		case err := <-col.asyncErrorChannel:
@@ -477,7 +516,7 @@ LOOP:
 			if s != SIGHUP {
 				break LOOP
 			}
-			if err := col.reloadConfiguration(ctx); err != nil {
+			if err := col.reloadConfiguration(ctx, configChange{source: configChangeSourceSignal, signal: s.String()}); err != nil {
 				return err
 			}
 		case <-col.shutdownChan:

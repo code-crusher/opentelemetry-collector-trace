@@ -1151,6 +1151,218 @@ func TestCollectorInvalidConfigOnReload(t *testing.T) {
 	}
 }
 
+// TestCollectorLogsConfigChangeEvent verifies that a configuration change is
+// recorded as a security event through the Collector's logger, attributed to
+// the source that triggered it. The event must be logged for both a provider
+// watch event and an OS signal.
+func TestCollectorLogsConfigChangeEvent(t *testing.T) {
+	tests := map[string]struct {
+		useWatcher     bool
+		expectedFields map[string]any
+	}{
+		"provider": {
+			useWatcher:     true,
+			expectedFields: map[string]any{"source": "provider"},
+		},
+		"signal": {
+			expectedFields: map[string]any{"source": "signal", "signal": "hangup"},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			observerCore, observedLogs := observer.New(zapcore.WarnLevel)
+
+			var watcher confmap.WatcherFunc
+			provider := newFakeProvider("file", func(_ context.Context, _ string, w confmap.WatcherFunc) (*confmap.Retrieved, error) {
+				watcher = w
+				return confmap.NewRetrieved(newConfFromFile(t, filepath.Join("testdata", "otelcol-nop.yaml")))
+			})
+
+			factories, err := nopFactories()
+			require.NoError(t, err)
+			factories.Telemetry = telemetry.NewFactory(
+				func() component.Config { return fakeTelemetryConfig{} },
+				telemetrytest.WithLogger(zap.New(observerCore), nil),
+			)
+
+			col, err := NewCollector(CollectorSettings{
+				BuildInfo: component.NewDefaultBuildInfo(),
+				Factories: func() (Factories, error) { return factories, nil },
+				ConfigProviderSettings: ConfigProviderSettings{
+					ResolverSettings: confmap.ResolverSettings{
+						URIs:              []string{"file:cfg"},
+						ProviderFactories: []confmap.ProviderFactory{provider},
+					},
+				},
+			})
+			require.NoError(t, err)
+
+			wg := startCollector(context.Background(), t, col)
+			assert.Eventually(t, func() bool {
+				return StateRunning == col.GetState()
+			}, 2*time.Second, 200*time.Millisecond)
+
+			if test.useWatcher {
+				watcher(&confmap.ChangeEvent{})
+			} else {
+				col.signalsChannel <- SIGHUP
+			}
+
+			// The change itself is logged before the reload is attempted.
+			assert.Eventually(t, func() bool {
+				return observedLogs.FilterMessage("Config updated, restart service").Len() == 1
+			}, 2*time.Second, 50*time.Millisecond)
+
+			entries := observedLogs.FilterMessage("Config updated, restart service").All()
+			require.Len(t, entries, 1)
+			fields := entries[0].ContextMap()
+			for key, want := range test.expectedFields {
+				assert.Equal(t, want, fields[key], "field %q", key)
+			}
+
+			col.Shutdown()
+			wg.Wait()
+			assert.Equal(t, StateClosed, col.GetState())
+		})
+	}
+}
+
+// TestCollectorLogsPartialReloadConfigChange verifies that a configuration
+// change applied by a partial receiver reload is recorded at warn level. The
+// partial reload path must not be quieter than the full reload path, otherwise
+// the change is not recorded when the log level is raised above the default.
+func TestCollectorLogsPartialReloadConfigChange(t *testing.T) {
+	require.NoError(t, featuregate.GlobalRegistry().Set("service.partialReload", true))
+	defer func() {
+		require.NoError(t, featuregate.GlobalRegistry().Set("service.partialReload", false))
+	}()
+
+	// Only warn and above are recorded, as an operator raising the log level
+	// above the default would configure.
+	observerCore, observedLogs := observer.New(zapcore.WarnLevel)
+
+	var watcher confmap.WatcherFunc
+	provider := newFakeProvider("file", func(_ context.Context, _ string, w confmap.WatcherFunc) (*confmap.Retrieved, error) {
+		watcher = w
+		return confmap.NewRetrieved(newConfFromFile(t, filepath.Join("testdata", "otelcol-nop.yaml")))
+	})
+
+	factories, err := nopFactories()
+	require.NoError(t, err)
+	factories.Telemetry = telemetry.NewFactory(
+		func() component.Config { return fakeTelemetryConfig{} },
+		telemetrytest.WithLogger(zap.New(observerCore), nil),
+	)
+
+	col, err := NewCollector(CollectorSettings{
+		BuildInfo: component.NewDefaultBuildInfo(),
+		Factories: func() (Factories, error) { return factories, nil },
+		ConfigProviderSettings: ConfigProviderSettings{
+			ResolverSettings: confmap.ResolverSettings{
+				URIs:              []string{"file:cfg"},
+				ProviderFactories: []confmap.ProviderFactory{provider},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	wg := startCollector(context.Background(), t, col)
+	assert.Eventually(t, func() bool {
+		return StateRunning == col.GetState()
+	}, 2*time.Second, 200*time.Millisecond)
+
+	watcher(&confmap.ChangeEvent{})
+
+	assert.Eventually(t, func() bool {
+		return observedLogs.FilterMessage("Config updated, performing partial receiver reload").Len() == 1
+	}, 2*time.Second, 50*time.Millisecond)
+
+	entries := observedLogs.FilterMessage("Config updated, performing partial receiver reload").All()
+	require.Len(t, entries, 1)
+	assert.Equal(t, zapcore.WarnLevel, entries[0].Level)
+	assert.Equal(t, "provider", entries[0].ContextMap()["source"])
+
+	col.Shutdown()
+	wg.Wait()
+	assert.Equal(t, StateClosed, col.GetState())
+}
+
+// TestCollectorLogsRejectedConfigChange verifies that a configuration change
+// whose new configuration cannot be applied is still recorded through the
+// Collector's logger. Without this, an operator relying on the Collector's log
+// output has no record that a configuration change was attempted and rejected.
+func TestCollectorLogsRejectedConfigChange(t *testing.T) {
+	observerCore, observedLogs := observer.New(zapcore.WarnLevel)
+
+	var invalid atomic.Bool
+	confMap := func() map[string]any {
+		endpoint := "receiver"
+		if invalid.Load() {
+			endpoint = "invalid"
+		}
+		return map[string]any{
+			"receivers": map[string]any{"validating": map[string]any{"endpoint": endpoint}},
+			"exporters": map[string]any{"validating": map[string]any{"endpoint": "exporter"}},
+			"service": map[string]any{
+				"pipelines": map[string]any{
+					"traces": map[string]any{
+						"receivers": []any{"validating"},
+						"exporters": []any{"validating"},
+					},
+				},
+			},
+		}
+	}
+
+	var watcher confmap.WatcherFunc
+	provider := newFakeProvider("file", func(_ context.Context, _ string, w confmap.WatcherFunc) (*confmap.Retrieved, error) {
+		watcher = w
+		return confmap.NewRetrieved(confMap())
+	})
+
+	factories := validatingFactories(t)
+	factories.Telemetry = telemetry.NewFactory(
+		func() component.Config { return fakeTelemetryConfig{} },
+		telemetrytest.WithLogger(zap.New(observerCore), nil),
+	)
+
+	col, err := NewCollector(CollectorSettings{
+		BuildInfo: component.NewDefaultBuildInfo(),
+		Factories: func() (Factories, error) { return factories, nil },
+		ConfigProviderSettings: ConfigProviderSettings{
+			ResolverSettings: confmap.ResolverSettings{
+				URIs:              []string{"file:cfg"},
+				ProviderFactories: []confmap.ProviderFactory{provider},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- col.Run(context.Background()) }()
+	assert.Eventually(t, func() bool {
+		return StateRunning == col.GetState()
+	}, 2*time.Second, 200*time.Millisecond)
+
+	invalid.Store(true)
+	watcher(&confmap.ChangeEvent{})
+
+	select {
+	case runErr := <-errCh:
+		require.ErrorContains(t, runErr, "invalid endpoint value")
+	case <-time.After(2 * time.Second):
+		t.Fatal("collector did not exit after invalid config reload")
+	}
+
+	// The rejected change must be recorded, with its cause and attribution.
+	entries := observedLogs.FilterMessage("Failed to apply updated configuration").All()
+	require.Len(t, entries, 1)
+	fields := entries[0].ContextMap()
+	assert.Equal(t, "provider", fields["source"])
+	assert.Contains(t, fields["error"], "invalid endpoint value")
+}
+
 func TestCollectorReportError(t *testing.T) {
 	col, err := NewCollector(CollectorSettings{
 		BuildInfo:              component.NewDefaultBuildInfo(),
