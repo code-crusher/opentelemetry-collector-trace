@@ -582,7 +582,11 @@
     "zipkinv",
     "zpages",
     "zpagesextension",
-    "zstd"
+    "zstd",
+    "CSAF",
+    "SUIDSGID",
+    "Tunables",
+    "seccomp"
   ],
   "enableGlobDot": true,
   "useGitignore": true,

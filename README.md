@@ -38,6 +38,8 @@
     &nbsp;&nbsp;&bull;&nbsp;&nbsp;
     <a href="docs/security-best-practices.md">Security</a>
     &nbsp;&nbsp;&bull;&nbsp;&nbsp;
+    <a href="docs/supply-chain.md">Supply chain security</a>
+    &nbsp;&nbsp;&bull;&nbsp;&nbsp;
     <a href="https://pkg.go.dev/go.opentelemetry.io/collector">Package</a>
   </strong>
 </p>
@@ -154,6 +156,8 @@ The following checks were performed on each of these signatures:
 
 > [!NOTE]
 > We started signing the images with release `v0.95.0`
+
+For how release artifacts are produced, how to verify the signatures on archives, packages and their SBOMs, and the current status of a hardened image for the [container.gov.de](https://container.gov.de/) initiative, see [Supply chain security](docs/supply-chain.md).
 
 ## Contributing
 
