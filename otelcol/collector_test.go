@@ -1315,6 +1315,158 @@ func TestCollectorSendSignal(t *testing.T) {
 	assert.Equal(t, StateClosed, col.GetState())
 }
 
+// signalWatcherExtension is an extension implementing
+// extensioncapabilities.SignalWatcher for testing purposes.
+type signalWatcherExtension struct {
+	component.StartFunc
+	component.ShutdownFunc
+	mux       sync.Mutex
+	received  []os.Signal
+	signalsCh chan os.Signal
+}
+
+func (e *signalWatcherExtension) Signals() []os.Signal {
+	return []os.Signal{SIGHUP, SIGTERM, extOnlySignal}
+}
+
+func (e *signalWatcherExtension) Signal(sig os.Signal) error {
+	e.mux.Lock()
+	defer e.mux.Unlock()
+	e.received = append(e.received, sig)
+	select {
+	case e.signalsCh <- sig:
+	default:
+	}
+	return nil
+}
+
+var _ extensioncapabilities.SignalWatcher = (*signalWatcherExtension)(nil)
+
+// newSignalWatcherExtensionFactory returns an extension factory whose extension
+// records the OS signals dispatched to it by the collector.
+func newSignalWatcherExtensionFactory() (extension.Factory, *signalWatcherExtension) {
+	ext := &signalWatcherExtension{signalsCh: make(chan os.Signal, 8)}
+	return extension.NewFactory(
+		component.MustNewType("signalwatcher"),
+		func() component.Config {
+			return &struct{}{}
+		},
+		func(context.Context, extension.Settings, component.Config) (extension.Extension, error) {
+			return ext, nil
+		},
+		component.StabilityLevelDevelopment,
+	), ext
+}
+
+// TestCollectorSignalWatcher verifies that extensions implementing
+// extensioncapabilities.SignalWatcher are notified of OS signals received by
+// the collector's own signal handler, and that signals the collector does not
+// act on itself are still dispatched.
+func TestCollectorSignalWatcher(t *testing.T) {
+	signalWatcherFactory, signalWatcher := newSignalWatcherExtensionFactory()
+
+	factories, err := nopFactories()
+	require.NoError(t, err)
+	factories.Extensions[signalWatcherFactory.Type()] = signalWatcherFactory
+
+	col, err := NewCollector(CollectorSettings{
+		BuildInfo:              component.NewDefaultBuildInfo(),
+		Factories:              func() (Factories, error) { return factories, nil },
+		ConfigProviderSettings: newDefaultConfigProviderSettings(t, []string{filepath.Join("testdata", "otelcol-signalwatcher.yaml")}),
+	})
+	require.NoError(t, err)
+
+	wg := startCollector(context.Background(), t, col)
+
+	assert.Eventually(t, func() bool {
+		return StateRunning == col.GetState()
+	}, 2*time.Second, 200*time.Millisecond)
+
+	// A signal the collector itself does not react to is dispatched
+	// to the extension and the collector keeps running.
+	col.signalsChannel <- extOnlySignal
+	select {
+	case sig := <-signalWatcher.signalsCh:
+		assert.Equal(t, extOnlySignal, sig)
+	case <-time.After(2 * time.Second):
+		t.Fatal("extension was not notified of the extension-only signal")
+	}
+	assert.Eventually(t, func() bool {
+		return StateRunning == col.GetState()
+	}, 2*time.Second, 200*time.Millisecond)
+
+	// SIGHUP triggers a configuration reload and is dispatched to the
+	// extension first.
+	col.signalsChannel <- SIGHUP
+	select {
+	case sig := <-signalWatcher.signalsCh:
+		assert.Equal(t, SIGHUP, sig)
+	case <-time.After(2 * time.Second):
+		t.Fatal("extension was not notified of SIGHUP")
+	}
+	assert.Eventually(t, func() bool {
+		return StateRunning == col.GetState()
+	}, 2*time.Second, 200*time.Millisecond)
+
+	// SIGTERM is dispatched to the extension before the collector shuts down.
+	col.signalsChannel <- SIGTERM
+	select {
+	case sig := <-signalWatcher.signalsCh:
+		assert.Equal(t, SIGTERM, sig)
+	case <-time.After(2 * time.Second):
+		t.Fatal("extension was not notified of SIGTERM")
+	}
+
+	wg.Wait()
+	assert.Equal(t, StateClosed, col.GetState())
+
+	signalWatcher.mux.Lock()
+	defer signalWatcher.mux.Unlock()
+	assert.Equal(t, []os.Signal{extOnlySignal, SIGHUP, SIGTERM}, signalWatcher.received)
+}
+
+// TestCollectorSignalWatcherDisableGracefulShutdown verifies that with
+// DisableGracefulShutdown set, SIGTERM is still dispatched to extensions
+// interested in it, but no longer shuts down the collector.
+func TestCollectorSignalWatcherDisableGracefulShutdown(t *testing.T) {
+	signalWatcherFactory, signalWatcher := newSignalWatcherExtensionFactory()
+
+	factories, err := nopFactories()
+	require.NoError(t, err)
+	factories.Extensions[signalWatcherFactory.Type()] = signalWatcherFactory
+
+	col, err := NewCollector(CollectorSettings{
+		BuildInfo:               component.NewDefaultBuildInfo(),
+		Factories:               func() (Factories, error) { return factories, nil },
+		DisableGracefulShutdown: true,
+		ConfigProviderSettings:  newDefaultConfigProviderSettings(t, []string{filepath.Join("testdata", "otelcol-signalwatcher.yaml")}),
+	})
+	require.NoError(t, err)
+
+	wg := startCollector(context.Background(), t, col)
+
+	assert.Eventually(t, func() bool {
+		return StateRunning == col.GetState()
+	}, 2*time.Second, 200*time.Millisecond)
+
+	// SIGTERM is dispatched to the extension, but with graceful shutdown
+	// disabled it does not terminate the collector.
+	col.signalsChannel <- SIGTERM
+	select {
+	case sig := <-signalWatcher.signalsCh:
+		assert.Equal(t, SIGTERM, sig)
+	case <-time.After(2 * time.Second):
+		t.Fatal("extension was not notified of SIGTERM")
+	}
+	assert.Eventually(t, func() bool {
+		return StateRunning == col.GetState()
+	}, 2*time.Second, 200*time.Millisecond)
+
+	col.Shutdown()
+	wg.Wait()
+	assert.Equal(t, StateClosed, col.GetState())
+}
+
 func TestCollectorFailedShutdown(t *testing.T) {
 	t.Skip("This test was using telemetry shutdown failure, switch to use a component that errors on shutdown.")
 

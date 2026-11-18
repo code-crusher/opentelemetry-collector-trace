@@ -456,6 +456,17 @@ func (col *Collector) Run(ctx context.Context) error {
 		signal.Notify(col.signalsChannel, os.Interrupt, SIGTERM)
 	}
 
+	// Extensions can declare interest in OS signals via
+	// extensioncapabilities.SignalWatcher; the collector remains the sole
+	// owner of the signal handler and dispatches to them. Re-register after
+	// every reload, since a reload rebuilds the extensions.
+	notifyExtensionSignals := func() {
+		for _, sig := range col.service.WatchedSignals() {
+			signal.Notify(col.signalsChannel, sig)
+		}
+	}
+	notifyExtensionSignals()
+
 	// Control loop: selects between channels for various interrupts - when this loop is broken, the collector exits.
 	// If a configuration reload fails, we return without waiting for graceful shutdown.
 LOOP:
@@ -469,16 +480,29 @@ LOOP:
 			if err := col.reloadConfiguration(ctx); err != nil {
 				return err
 			}
+			notifyExtensionSignals()
 		case err := <-col.asyncErrorChannel:
 			col.service.Logger().Error("Asynchronous error received, terminating process", zap.Error(err))
 			break LOOP
 		case s := <-col.signalsChannel:
 			col.service.Logger().Info("Received signal from OS", zap.String("signal", s.String()))
-			if s != SIGHUP {
-				break LOOP
+			// Let the extensions interested in this signal run their logic
+			// before the collector acts on the signal itself.
+			if err := col.service.NotifySignal(s); err != nil {
+				col.service.Logger().Error("Error from signal watcher extension", zap.Error(err))
 			}
-			if err := col.reloadConfiguration(ctx); err != nil {
-				return err
+			switch {
+			case s == SIGHUP:
+				if err := col.reloadConfiguration(ctx); err != nil {
+					return err
+				}
+				notifyExtensionSignals()
+			case !col.set.DisableGracefulShutdown && (s == os.Interrupt || s == SIGTERM):
+				// Termination signals owned by the collector itself. Any other
+				// received signal was only of interest to extensions, and when
+				// graceful shutdown is disabled the caller keeps full control
+				// over termination.
+				break LOOP
 			}
 		case <-col.shutdownChan:
 			col.service.Logger().Info("Received shutdown request")

@@ -1,0 +1,19 @@
+receivers:
+  nop:
+
+processors:
+  nop:
+
+exporters:
+  nop:
+
+extensions:
+  signalwatcher:
+
+service:
+  extensions: [signalwatcher]
+  pipelines:
+    traces:
+      receivers: [nop]
+      processors: [nop]
+      exporters: [nop]

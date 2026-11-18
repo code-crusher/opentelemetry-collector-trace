@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"slices"
 	"sort"
 
@@ -139,6 +140,40 @@ func (bes *Extensions) NotifyComponentStatusChange(source *componentstatus.Insta
 			sw.Changed(source, event)
 		}
 	}
+}
+
+// WatchedSignals returns the list of OS signals that the hosted extensions
+// declared interest in, in the order the extensions are started. The returned
+// slice contains no duplicates. If no extension implements
+// extensioncapabilities.SignalWatcher, it returns nil.
+func (bes *Extensions) WatchedSignals() []os.Signal {
+	var sigs []os.Signal
+	for _, extID := range bes.extensionIDs {
+		ext := bes.extMap[extID]
+		if sw, ok := ext.(extensioncapabilities.SignalWatcher); ok {
+			for _, sig := range sw.Signals() {
+				if !slices.Contains(sigs, sig) {
+					sigs = append(sigs, sig)
+				}
+			}
+		}
+	}
+	return sigs
+}
+
+// NotifySignal dispatches the received OS signal to the extensions that
+// declared interest in it. Errors returned by the extensions are combined.
+func (bes *Extensions) NotifySignal(sig os.Signal) error {
+	var errs error
+	for _, extID := range bes.extensionIDs {
+		ext := bes.extMap[extID]
+		if sw, ok := ext.(extensioncapabilities.SignalWatcher); ok {
+			if slices.Contains(sw.Signals(), sig) {
+				errs = multierr.Append(errs, sw.Signal(sig))
+			}
+		}
+	}
+	return errs
 }
 
 func (bes *Extensions) GetExtensions() map[component.ID]component.Component {

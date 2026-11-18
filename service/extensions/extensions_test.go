@@ -6,7 +6,10 @@ package extensions
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"slices"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -810,6 +813,162 @@ func newConfigSnapshotExtensionFactory(name component.Type, notifyConfigSnapshot
 			return &configSnapshotAndConfigWatcherExtension{
 				notifyConfigSnapshot: notifyConfigSnapshot,
 			}, nil
+		},
+		component.StabilityLevelDevelopment,
+	)
+}
+
+func TestSignalWatcher(t *testing.T) {
+	// Only use signals that are defined on every supported platform.
+	sigTerm := syscall.SIGTERM
+	sigKill := syscall.SIGKILL
+	watcherError := errors.New("error handling signal")
+
+	// Two extensions watching overlapping signals, one returning an error,
+	// and one plain nop extension which must not be notified.
+	nopExtensionFactory := extensiontest.NewNopFactory()
+	termWatcherFactory := newSignalWatcherExtensionFactory(component.MustNewType("termwatcher"), func(sig os.Signal) error {
+		if sig != sigTerm {
+			return fmt.Errorf("unexpected signal %v", sig)
+		}
+		return nil
+	}, sigTerm)
+	killErrWatcherFactory := newSignalWatcherExtensionFactory(component.MustNewType("killwatcher"), func(sig os.Signal) error {
+		if sig != sigKill {
+			return fmt.Errorf("unexpected signal %v", sig)
+		}
+		return watcherError
+	}, sigTerm, sigKill)
+
+	tests := []struct {
+		name              string
+		factories         map[component.Type]extension.Factory
+		extensionsConfigs map[component.ID]component.Config
+		serviceExtensions []component.ID
+		watched           []os.Signal
+		notify            os.Signal
+		want              error
+	}{
+		{
+			name: "No signal watcher extensions",
+			factories: map[component.Type]extension.Factory{
+				component.MustNewType("nop"): nopExtensionFactory,
+			},
+			extensionsConfigs: map[component.ID]component.Config{
+				component.MustNewID("nop"): nopExtensionFactory.CreateDefaultConfig(),
+			},
+			serviceExtensions: []component.ID{component.MustNewID("nop")},
+		},
+		{
+			name: "One signal watcher extension",
+			factories: map[component.Type]extension.Factory{
+				termWatcherFactory.Type(): termWatcherFactory,
+			},
+			extensionsConfigs: map[component.ID]component.Config{
+				component.NewID(termWatcherFactory.Type()): termWatcherFactory.CreateDefaultConfig(),
+			},
+			serviceExtensions: []component.ID{component.NewID(termWatcherFactory.Type())},
+			watched:           []os.Signal{sigTerm},
+			notify:            sigTerm,
+		},
+		{
+			name: "Overlapping signals are deduplicated",
+			factories: map[component.Type]extension.Factory{
+				termWatcherFactory.Type():    termWatcherFactory,
+				killErrWatcherFactory.Type(): killErrWatcherFactory,
+			},
+			extensionsConfigs: map[component.ID]component.Config{
+				component.NewID(termWatcherFactory.Type()):    termWatcherFactory.CreateDefaultConfig(),
+				component.NewID(killErrWatcherFactory.Type()): killErrWatcherFactory.CreateDefaultConfig(),
+			},
+			serviceExtensions: []component.ID{
+				component.NewID(termWatcherFactory.Type()),
+				component.NewID(killErrWatcherFactory.Type()),
+			},
+			watched: []os.Signal{sigTerm, sigKill},
+			notify:  sigKill,
+			want:    watcherError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exts, err := New(context.Background(), Settings{
+				Telemetry:  componenttest.NewNopTelemetrySettings(),
+				BuildInfo:  component.NewDefaultBuildInfo(),
+				Extensions: builders.NewExtension(tt.extensionsConfigs, tt.factories),
+			}, tt.serviceExtensions)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.watched, exts.WatchedSignals())
+
+			if tt.notify != nil {
+				assert.Equal(t, tt.want, exts.NotifySignal(tt.notify))
+			}
+		})
+	}
+}
+
+func TestNotifySignalOnlyNotifiesInterestedExtensions(t *testing.T) {
+	var notified []os.Signal
+	// SIGKILL and SIGTERM are defined, with distinct values, on every
+	// platform the Collector is built for.
+	interestedFactory := newSignalWatcherExtensionFactory(component.MustNewType("interested"), func(sig os.Signal) error {
+		notified = append(notified, sig)
+		return nil
+	}, syscall.SIGKILL)
+
+	exts, err := New(context.Background(), Settings{
+		Telemetry: componenttest.NewNopTelemetrySettings(),
+		BuildInfo: component.NewDefaultBuildInfo(),
+		Extensions: builders.NewExtension(
+			map[component.ID]component.Config{
+				component.NewID(interestedFactory.Type()): interestedFactory.CreateDefaultConfig(),
+			},
+			map[component.Type]extension.Factory{interestedFactory.Type(): interestedFactory},
+		),
+	}, []component.ID{component.NewID(interestedFactory.Type())})
+	require.NoError(t, err)
+
+	// A signal the extension did not declare interest in is not dispatched.
+	require.NoError(t, exts.NotifySignal(syscall.SIGTERM))
+	assert.Empty(t, notified)
+
+	// A declared signal is dispatched.
+	require.NoError(t, exts.NotifySignal(syscall.SIGKILL))
+	assert.Equal(t, []os.Signal{syscall.SIGKILL}, notified)
+}
+
+type signalWatcherExtension struct {
+	fn      func(sig os.Signal) error
+	signals []os.Signal
+}
+
+func (comp *signalWatcherExtension) Start(context.Context, component.Host) error { return nil }
+
+func (comp *signalWatcherExtension) Shutdown(context.Context) error { return nil }
+
+func (comp *signalWatcherExtension) Signals() []os.Signal {
+	return comp.signals
+}
+
+func (comp *signalWatcherExtension) Signal(sig os.Signal) error {
+	if comp.fn != nil {
+		return comp.fn(sig)
+	}
+	return nil
+}
+
+var _ extensioncapabilities.SignalWatcher = (*signalWatcherExtension)(nil)
+
+func newSignalWatcherExtensionFactory(name component.Type, fn func(sig os.Signal) error, sigs ...os.Signal) extension.Factory {
+	return extension.NewFactory(
+		name,
+		func() component.Config {
+			return &struct{}{}
+		},
+		func(context.Context, extension.Settings, component.Config) (extension.Extension, error) {
+			return &signalWatcherExtension{fn: fn, signals: sigs}, nil
 		},
 		component.StabilityLevelDevelopment,
 	)

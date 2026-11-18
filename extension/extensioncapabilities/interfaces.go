@@ -7,6 +7,7 @@ package extensioncapabilities // import "go.opentelemetry.io/collector/extension
 
 import (
 	"context"
+	"os"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componentstatus"
@@ -103,4 +104,27 @@ type ComponentStatusWatcher interface {
 	// may be called before, after or concurrently with calls to Component.Start() and Component.Shutdown().
 	// The function may be called concurrently with itself.
 	Changed(source *componentstatus.InstanceID, event *componentstatus.Event)
+}
+
+// SignalWatcher is an extra interface for Extension hosted by the OpenTelemetry
+// Collector that is to be implemented by extensions interested in receiving
+// OS signals (e.g. SIGINT, SIGTERM or SIGHUP). The Collector owns the process's
+// signal handler and dispatches the received signals to the extensions that
+// declared interest in them, so extensions do not need to (and must not)
+// install their own signal handlers.
+type SignalWatcher interface {
+	// Signals returns the list of OS signals the extension wants to be
+	// notified about. The Collector calls it to register the signals with its
+	// signal handler and to decide which extensions to notify on each
+	// received signal.
+	Signals() []os.Signal
+
+	// Signal notifies the extension that the given OS signal was received.
+	// Signal is called synchronously from the Collector's signal handling
+	// loop: blocking here delays the Collector's own reaction to the signal,
+	// so implementations should return quickly. Returned errors are logged by
+	// the Collector and do not interrupt its own handling of the signal.
+	// Signal may be called concurrently with calls to Component.Start() and
+	// Component.Shutdown(), but never concurrently with itself.
+	Signal(sig os.Signal) error
 }

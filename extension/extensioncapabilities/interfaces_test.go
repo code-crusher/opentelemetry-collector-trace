@@ -4,11 +4,39 @@
 package extensioncapabilities
 
 import (
+	"os"
 	"reflect"
+	"syscall"
 	"testing"
 
 	"go.opentelemetry.io/collector/confmap"
+	"go.opentelemetry.io/collector/extension"
 )
+
+type signalWatcherExt struct {
+	extension.Extension
+}
+
+func (signalWatcherExt) Signals() []os.Signal { return nil }
+
+func (signalWatcherExt) Signal(os.Signal) error { return nil }
+
+func TestSignalWatcher(t *testing.T) {
+	// Compile-time check that the interface can be implemented by extensions.
+	var _ interface {
+		extension.Extension
+		SignalWatcher
+	} = signalWatcherExt{}
+
+	var watcher SignalWatcher = signalWatcherExt{}
+	// An empty set of signals is a valid declaration of interest.
+	if len(watcher.Signals()) != 0 {
+		t.Fatal("Signals() returned a non-empty slice")
+	}
+	if err := watcher.Signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("Signal() returned an error: %v", err)
+	}
+}
 
 func TestConfigSnapshot(t *testing.T) {
 	effective := confmap.NewFromStringMap(map[string]any{

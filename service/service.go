@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 
 	noopmetric "go.opentelemetry.io/otel/metric/noop"
@@ -359,6 +360,19 @@ func (srv *Service) initGraph(ctx context.Context, cfg Config) error {
 // This is a temporary API that may be removed soon after investigating how the collector should record different events.
 func (srv *Service) Logger() *zap.Logger {
 	return srv.telemetrySettings.Logger
+}
+
+// WatchedSignals returns the list of OS signals that the service's extensions
+// declared interest in via extensioncapabilities.SignalWatcher.
+// Returns nil if no extension is interested in any signal.
+func (srv *Service) WatchedSignals() []os.Signal {
+	return srv.host.ServiceExtensions.WatchedSignals()
+}
+
+// NotifySignal dispatches the received OS signal to the extensions that
+// declared interest in it via extensioncapabilities.SignalWatcher.
+func (srv *Service) NotifySignal(sig os.Signal) error {
+	return srv.host.ServiceExtensions.NotifySignal(sig)
 }
 
 // Validate verifies the graph by calling the internal graph.Build.
