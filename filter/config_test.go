@@ -37,6 +37,11 @@ func TestConfig(t *testing.T) {
 				Strict: "strict",
 			},
 		},
+		"pattern/default": {
+			{
+				Pattern: "one*two",
+			},
+		},
 	}
 
 	for testName, actualCfg := range actualConfigs {
@@ -65,6 +70,15 @@ func TestMatches(t *testing.T) {
 		{
 			Regex: "a|b|c",
 		},
+		{
+			Pattern: "x*z",
+		},
+		{
+			Pattern: "f?o",
+		},
+		{
+			Pattern: "test.num[0]",
+		},
 	}
 
 	for _, c := range cfg {
@@ -75,6 +89,66 @@ func TestMatches(t *testing.T) {
 	assert.True(t, fs.Matches("a"))
 	assert.True(t, fs.Matches("b"))
 	assert.True(t, fs.Matches("c"))
+	assert.True(t, fs.Matches("xz"))
+	assert.True(t, fs.Matches("xyz"))
+	assert.True(t, fs.Matches("xyabcz"))
+	assert.True(t, fs.Matches("foo"))
+	assert.True(t, fs.Matches("fao"))
+	assert.True(t, fs.Matches("test.num[0]"))
+
+	assert.False(t, fs.Matches("d"))
+	assert.False(t, fs.Matches("fooo"))
+	assert.False(t, fs.Matches("testXnum[0]"))
+	assert.False(t, fs.Matches(123))
+}
+
+func TestPattern(t *testing.T) {
+	tests := []struct {
+		pattern  string
+		input    string
+		expected bool
+	}{
+		// No wildcards.
+		{pattern: "abc", input: "abc", expected: true},
+		{pattern: "abc", input: "abcd", expected: false},
+		// '*' matches zero or more characters.
+		{pattern: "a*c", input: "ac", expected: true},
+		{pattern: "a*c", input: "abbc", expected: true},
+		{pattern: "a*c", input: "ab", expected: false},
+		{pattern: "*", input: "anything", expected: true},
+		// '?' matches exactly one character.
+		{pattern: "a?c", input: "abc", expected: true},
+		{pattern: "a?c", input: "ac", expected: false},
+		{pattern: "a?c", input: "abbc", expected: false},
+		// Regex metacharacters are matched literally.
+		{pattern: "a.b", input: "a.b", expected: true},
+		{pattern: "a.b", input: "axb", expected: false},
+		{pattern: "a[b]", input: "a[b]", expected: true},
+		{pattern: "a[b]", input: "ab", expected: false},
+		{pattern: "a(b)", input: "a(b)", expected: true},
+		{pattern: "a+b", input: "a+b", expected: true},
+		{pattern: "a+b", input: "ab", expected: false},
+		{pattern: "a^b$", input: "a^b$", expected: true},
+		{pattern: `a\b`, input: `a\b`, expected: true},
+		// Realistic metric name matching.
+		{pattern: "http.server.request.count", input: "http.server.request.count", expected: true},
+		{pattern: "http.server.request.count", input: "httpXserverXrequestXcount", expected: false},
+		{pattern: "http.server.*", input: "http.server.request.duration", expected: true},
+		{pattern: "http.server.*", input: "http.server.response.body.size", expected: true},
+		{pattern: "http.server.*", input: "http.client.request.duration", expected: false},
+		{pattern: "system.*.utilization", input: "system.memory.utilization", expected: true},
+		{pattern: "system.*.utilization", input: "system.cpu.utilization", expected: true},
+		{pattern: "system.*.utilization", input: "system.memory.usage", expected: false},
+		{pattern: "system.?.utilization", input: "system.c.utilization", expected: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.pattern+"_with_"+tt.input, func(t *testing.T) {
+			cfg := Config{Pattern: tt.pattern}
+			require.NoError(t, cfg.Validate())
+			assert.Equal(t, tt.expected, CreateFilter([]Config{cfg}).Matches(tt.input))
+		})
+	}
 }
 
 func TestConfigInvalid(t *testing.T) {
@@ -95,6 +169,25 @@ func TestConfigInvalid(t *testing.T) {
 			{
 				Regex:  "1",
 				Strict: "1",
+			},
+		},
+		"invalid/pattern_and_strict": {
+			{
+				Pattern: "a*",
+				Strict:  "a",
+			},
+		},
+		"invalid/pattern_and_regexp": {
+			{
+				Pattern: "a*",
+				Regex:   "a.*",
+			},
+		},
+		"invalid/pattern_strict_regexp": {
+			{
+				Pattern: "a*",
+				Strict:  "a",
+				Regex:   "a.*",
 			},
 		},
 	}

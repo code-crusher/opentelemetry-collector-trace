@@ -397,6 +397,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -404,7 +408,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsExclude defines a list of filters for attribute values. If the list is not empty, events with matching resource attribute values will not be emitted. EventsInclude has higher priority than EventsExclude."
                 },
@@ -413,6 +417,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -420,7 +428,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsInclude defines a list of filters for attribute values. If the list is not empty, only events with matching resource attribute values will be emitted."
                 },
@@ -429,6 +437,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -436,7 +448,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsExclude defines a list of filters for attribute values. If the list is not empty, metrics with matching resource attribute values will not be emitted. MetricsInclude has higher priority than MetricsExclude."
                 },
@@ -445,6 +457,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -452,7 +468,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsInclude defines a list of filters for attribute values. If the list is not empty, only metrics with matching resource attribute values will be emitted."
                 }
@@ -471,6 +487,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -478,7 +498,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsExclude defines a list of filters for attribute values. If the list is not empty, events with matching resource attribute values will not be emitted. EventsInclude has higher priority than EventsExclude."
                 },
@@ -487,6 +507,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -494,7 +518,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsInclude defines a list of filters for attribute values. If the list is not empty, only events with matching resource attribute values will be emitted."
                 },
@@ -503,6 +527,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -510,7 +538,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsExclude defines a list of filters for attribute values. If the list is not empty, metrics with matching resource attribute values will not be emitted. MetricsInclude has higher priority than MetricsExclude."
                 },
@@ -519,6 +547,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -526,7 +558,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsInclude defines a list of filters for attribute values. If the list is not empty, only metrics with matching resource attribute values will be emitted."
                 }
@@ -545,6 +577,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -552,7 +588,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsExclude defines a list of filters for attribute values. If the list is not empty, events with matching resource attribute values will not be emitted. EventsInclude has higher priority than EventsExclude."
                 },
@@ -561,6 +597,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -568,7 +608,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsInclude defines a list of filters for attribute values. If the list is not empty, only events with matching resource attribute values will be emitted."
                 },
@@ -577,6 +617,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -584,7 +628,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsExclude defines a list of filters for attribute values. If the list is not empty, metrics with matching resource attribute values will not be emitted. MetricsInclude has higher priority than MetricsExclude."
                 },
@@ -593,6 +637,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -600,7 +648,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsInclude defines a list of filters for attribute values. If the list is not empty, only metrics with matching resource attribute values will be emitted."
                 }
@@ -619,6 +667,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -626,7 +678,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsExclude defines a list of filters for attribute values. If the list is not empty, events with matching resource attribute values will not be emitted. EventsInclude has higher priority than EventsExclude."
                 },
@@ -635,6 +687,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -642,7 +698,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsInclude defines a list of filters for attribute values. If the list is not empty, only events with matching resource attribute values will be emitted."
                 },
@@ -651,6 +707,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -658,7 +718,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsExclude defines a list of filters for attribute values. If the list is not empty, metrics with matching resource attribute values will not be emitted. MetricsInclude has higher priority than MetricsExclude."
                 },
@@ -667,6 +727,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -674,7 +738,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsInclude defines a list of filters for attribute values. If the list is not empty, only metrics with matching resource attribute values will be emitted."
                 }
@@ -693,6 +757,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -700,7 +768,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsExclude defines a list of filters for attribute values. If the list is not empty, events with matching resource attribute values will not be emitted. EventsInclude has higher priority than EventsExclude."
                 },
@@ -709,6 +777,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -716,7 +788,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsInclude defines a list of filters for attribute values. If the list is not empty, only events with matching resource attribute values will be emitted."
                 },
@@ -725,6 +797,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -732,7 +808,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsExclude defines a list of filters for attribute values. If the list is not empty, metrics with matching resource attribute values will not be emitted. MetricsInclude has higher priority than MetricsExclude."
                 },
@@ -741,6 +817,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -748,7 +828,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsInclude defines a list of filters for attribute values. If the list is not empty, only metrics with matching resource attribute values will be emitted."
                 }
@@ -767,6 +847,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -774,7 +858,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsExclude defines a list of filters for attribute values. If the list is not empty, events with matching resource attribute values will not be emitted. EventsInclude has higher priority than EventsExclude."
                 },
@@ -783,6 +867,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -790,7 +878,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsInclude defines a list of filters for attribute values. If the list is not empty, only events with matching resource attribute values will be emitted."
                 },
@@ -799,6 +887,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -806,7 +898,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsExclude defines a list of filters for attribute values. If the list is not empty, metrics with matching resource attribute values will not be emitted. MetricsInclude has higher priority than MetricsExclude."
                 },
@@ -815,6 +907,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -822,7 +918,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsInclude defines a list of filters for attribute values. If the list is not empty, only metrics with matching resource attribute values will be emitted."
                 }
@@ -841,6 +937,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -848,7 +948,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsExclude defines a list of filters for attribute values. If the list is not empty, events with matching resource attribute values will not be emitted. EventsInclude has higher priority than EventsExclude."
                 },
@@ -857,6 +957,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -864,7 +968,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsInclude defines a list of filters for attribute values. If the list is not empty, only events with matching resource attribute values will be emitted."
                 },
@@ -873,6 +977,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -880,7 +988,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsExclude defines a list of filters for attribute values. If the list is not empty, metrics with matching resource attribute values will not be emitted. MetricsInclude has higher priority than MetricsExclude."
                 },
@@ -889,6 +997,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -896,7 +1008,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsInclude defines a list of filters for attribute values. If the list is not empty, only metrics with matching resource attribute values will be emitted."
                 }
@@ -915,6 +1027,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -922,7 +1038,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsExclude defines a list of filters for attribute values. If the list is not empty, events with matching resource attribute values will not be emitted. EventsInclude has higher priority than EventsExclude."
                 },
@@ -931,6 +1047,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -938,7 +1058,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsInclude defines a list of filters for attribute values. If the list is not empty, only events with matching resource attribute values will be emitted."
                 },
@@ -947,6 +1067,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -954,7 +1078,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsExclude defines a list of filters for attribute values. If the list is not empty, metrics with matching resource attribute values will not be emitted. MetricsInclude has higher priority than MetricsExclude."
                 },
@@ -963,6 +1087,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -970,7 +1098,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsInclude defines a list of filters for attribute values. If the list is not empty, only metrics with matching resource attribute values will be emitted."
                 }
@@ -989,6 +1117,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -996,7 +1128,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsExclude defines a list of filters for attribute values. If the list is not empty, events with matching resource attribute values will not be emitted. EventsInclude has higher priority than EventsExclude."
                 },
@@ -1005,6 +1137,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -1012,7 +1148,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsInclude defines a list of filters for attribute values. If the list is not empty, only events with matching resource attribute values will be emitted."
                 },
@@ -1021,6 +1157,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -1028,7 +1168,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsExclude defines a list of filters for attribute values. If the list is not empty, metrics with matching resource attribute values will not be emitted. MetricsInclude has higher priority than MetricsExclude."
                 },
@@ -1037,6 +1177,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -1044,7 +1188,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsInclude defines a list of filters for attribute values. If the list is not empty, only metrics with matching resource attribute values will be emitted."
                 }
@@ -1063,6 +1207,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -1070,7 +1218,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsExclude defines a list of filters for attribute values. If the list is not empty, events with matching resource attribute values will not be emitted. EventsInclude has higher priority than EventsExclude."
                 },
@@ -1079,6 +1227,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -1086,7 +1238,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: EventsInclude defines a list of filters for attribute values. If the list is not empty, only events with matching resource attribute values will be emitted."
                 },
@@ -1095,6 +1247,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -1102,7 +1258,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsExclude defines a list of filters for attribute values. If the list is not empty, metrics with matching resource attribute values will not be emitted. MetricsInclude has higher priority than MetricsExclude."
                 },
@@ -1111,6 +1267,10 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "description": "Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches zero or more characters. All other characters, including regular expression metacharacters such as `.`, are matched literally."
+                      },
                       "regexp": {
                         "type": "string"
                       },
@@ -1118,7 +1278,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "Config configures the matching behavior of a Filter."
+                    "description": "Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set."
                   },
                   "description": "Experimental: MetricsInclude defines a list of filters for attribute values. If the list is not empty, only metrics with matching resource attribute values will be emitted."
                 }

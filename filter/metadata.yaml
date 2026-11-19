@@ -7,9 +7,15 @@ status:
 
 exported_configs:
   config:
-    description: Config configures the matching behavior of a Filter.
+    description: Config configures the matching behavior of a Filter. Exactly one of Strict, Regex, or Pattern must be set.
     type: object
     properties:
+      pattern:
+        description: >-
+          Pattern is a wildcard pattern in which `?` matches exactly one character and `*` matches
+          zero or more characters. All other characters, including regular expression
+          metacharacters such as `.`, are matched literally.
+        type: string
       regexp:
         type: string
       strict:
