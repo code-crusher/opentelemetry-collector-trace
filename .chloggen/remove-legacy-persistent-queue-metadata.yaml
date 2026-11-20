@@ -1,0 +1,11 @@
+change_type: breaking
+
+component: pkg/exporterhelper
+
+note: Remove support for the legacy persistent queue metadata format (the `ri`, `wi` and `di` storage keys), which was replaced by the consolidated `qmv0` key in v0.110.0.
+
+subtext: The automatic migration path added when the format was consolidated has been removed as planned. Persistent queues still holding only legacy-format metadata now start empty, so upgrade to v0.110.0 or later once before upgrading further.
+
+issues: [15640]
+
+change_logs: [user]

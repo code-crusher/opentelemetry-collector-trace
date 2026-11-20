@@ -701,6 +701,34 @@ func TestPersistentQueueStartWithNonDispatched(t *testing.T) {
 	require.Equal(t, int64(5), newPs.Size())
 }
 
+func TestPersistentQueueIgnoresLegacyMetadata(t *testing.T) {
+	ext := storagetest.NewMockStorageExtension(nil)
+	client, err := ext.GetClient(context.Background(), component.KindExporter, component.NewID(exportertest.NopType), pipeline.SignalTraces.String())
+	require.NoError(t, err)
+
+	// Seed the storage with data in the legacy (pre-v0.110) format: separate "ri", "wi"
+	// and "di" keys holding binary-encoded indexes. This must be ignored by the queue.
+	require.NoError(t, client.Set(context.Background(), "ri", binary.LittleEndian.AppendUint64(nil, 0)))
+	require.NoError(t, client.Set(context.Background(), "wi", binary.LittleEndian.AppendUint64(nil, 3)))
+	require.NoError(t, client.Set(context.Background(), "di", itemIndexArrayToBytes([]uint64{0})))
+	require.NoError(t, client.Set(context.Background(), "0", []byte("1")))
+	require.NoError(t, client.Set(context.Background(), "1", []byte("2")))
+	require.NoError(t, client.Set(context.Background(), "2", []byte("3")))
+	require.NoError(t, client.Close(context.Background()))
+
+	// Start a new queue against the seeded storage. It must not pick up the legacy
+	// keys and must initialize as an empty queue instead.
+	ps := createTestPersistentQueueWithRequestsSizer(t, ext, 1000)
+	assert.Equal(t, int64(0), ps.Size())
+
+	// The queue works normally: items offered after the restart are dispatched.
+	for range 3 {
+		require.NoError(t, ps.Offer(context.Background(), intRequest(50)))
+	}
+	assert.Equal(t, int64(3), ps.Size())
+	require.NoError(t, ps.Shutdown(context.Background()))
+}
+
 func TestPersistentQueueStartWithNonDispatchedConcurrent(t *testing.T) {
 	req := intRequest(1)
 
@@ -808,64 +836,6 @@ func BenchmarkPersistentQueue(b *testing.B) {
 		}
 	}
 	require.NoError(b, ext.Shutdown(context.Background()))
-}
-
-func TestItemIndexMarshaling(t *testing.T) {
-	cases := []struct {
-		in  uint64
-		out uint64
-	}{
-		{
-			in:  0,
-			out: 0,
-		},
-		{
-			in:  1,
-			out: 1,
-		},
-		{
-			in:  0xFFFFFFFFFFFFFFFF,
-			out: 0xFFFFFFFFFFFFFFFF,
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(fmt.Sprintf("#elements:%v", c.in), func(*testing.T) {
-			buf := binary.LittleEndian.AppendUint64([]byte{}, c.in)
-			out, err := bytesToItemIndex(buf)
-			require.NoError(t, err)
-			require.Equal(t, c.out, out)
-		})
-	}
-}
-
-func TestItemIndexArrayMarshaling(t *testing.T) {
-	cases := []struct {
-		in  []uint64
-		out []uint64
-	}{
-		{
-			in:  []uint64{0, 1, 2},
-			out: []uint64{0, 1, 2},
-		},
-		{
-			in:  []uint64{},
-			out: nil,
-		},
-		{
-			in:  nil,
-			out: nil,
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(fmt.Sprintf("#elements:%v", c.in), func(_ *testing.T) {
-			buf := itemIndexArrayToBytes(c.in)
-			out, err := bytesToItemIndexArray(buf)
-			require.NoError(t, err)
-			require.Equal(t, c.out, out)
-		})
-	}
 }
 
 func TestPersistentQueue_ShutdownWhileConsuming(t *testing.T) {
@@ -1176,6 +1146,8 @@ func requireCurrentlyDispatchedItemsEqual(t *testing.T, pq *persistentQueue[intR
 	assert.ElementsMatch(t, compare, pq.metadata.CurrentlyDispatchedItems)
 }
 
+// itemIndexArrayToBytes encodes indexes in the legacy "di" key format: a uint32
+// little-endian element count followed by the uint64 little-endian indexes.
 func itemIndexArrayToBytes(arr []uint64) []byte {
 	size := len(arr)
 	buf := make([]byte, 0, 4+size*8)
