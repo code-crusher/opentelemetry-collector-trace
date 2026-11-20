@@ -170,6 +170,60 @@ func TestMetricStability(t *testing.T) {
 			otelPort:    getFreePort(t),
 			metricsPort: getFreePort(t),
 		},
+		{
+			name:       "Metric readers with type and unit suffixes",
+			configFile: "metric_stability_test_readers_with_suffixes.yaml",
+			expectedMetrics: map[string]bool{
+				// Process metrics
+				"otelcol_process_uptime_seconds_total":            false,
+				"otelcol_process_cpu_seconds_total":               false,
+				"otelcol_process_memory_rss_bytes":                false,
+				"otelcol_process_runtime_heap_alloc_bytes":        false,
+				"otelcol_process_runtime_total_alloc_bytes_total": false,
+				"otelcol_process_runtime_total_sys_memory_bytes":  false,
+
+				// Batch processor metrics
+				"otelcol_processor_batch_batch_send_size":            false,
+				"otelcol_processor_batch_batch_send_size_bytes":      false,
+				"otelcol_processor_batch_metadata_cardinality":       false,
+				"otelcol_processor_batch_timeout_trigger_send_total": false,
+
+				// HTTP server metrics
+				"http_server_request_body_size_bytes":  false,
+				"http_server_request_duration_seconds": false,
+				"http_server_response_body_size_bytes": false,
+
+				// Exporter metrics - Metrics
+				"otelcol_exporter_sent_metric_points_total":        false,
+				"otelcol_exporter_send_failed_metric_points_total": false,
+
+				// Exporter metrics - Traces
+				"otelcol_exporter_sent_spans_total":        false,
+				"otelcol_exporter_send_failed_spans_total": false,
+
+				// Exporter metrics - Logs
+				"otelcol_exporter_sent_log_records_total":        false,
+				"otelcol_exporter_send_failed_log_records_total": false,
+
+				// Receiver metrics
+				"otelcol_receiver_accepted_metric_points_total": false,
+				"otelcol_receiver_refused_metric_points_total":  false,
+
+				// Receiver metrics - Traces
+				"otelcol_receiver_accepted_spans_total": false,
+				"otelcol_receiver_refused_spans_total":  false,
+
+				// Receiver metrics - Logs
+				"otelcol_receiver_accepted_log_records_total": false,
+				"otelcol_receiver_refused_log_records_total":  false,
+
+				// Other metrics
+				"promhttp_metric_handler_errors_total": false,
+				"target_info":                          false,
+			},
+			otelPort:    getFreePort(t),
+			metricsPort: getFreePort(t),
+		},
 	}
 
 	for _, test := range tests {

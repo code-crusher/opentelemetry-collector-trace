@@ -563,6 +563,34 @@ If you are looking for developer-facing changes, check out [CHANGELOG-API.md](./
 
 ## v1.58.0/v0.152.0
 
+### 🛑 Breaking changes 🛑
+
+- `pkg/service`: The Prometheus exporter settings `without_type_suffix`, `without_units`, and `without_scope_info` now default to `true` when a Prometheus reader is explicitly configured under `service::telemetry::metrics::readers`. (#13867, #15027, #15526)
+  Previously, explicitly configuring a Prometheus reader (for example, to change the `host`) left these settings unset,
+  which the Prometheus exporter treated as `false`. This made metric names differ from the default configuration, so
+  `otelcol_process_uptime` was exported as `otelcol_process_uptime_seconds_total` and `otelcol_process_memory_rss`
+  as `otelcol_process_memory_rss_bytes`. The defaults are now consistent whether or not the Prometheus reader is
+  explicitly configured, which means the type and unit suffixes are no longer added unless you opt in.
+
+  If your dashboards, alerts, or recording rules rely on the type suffix (`_total`) or unit suffixes (`_seconds`,
+  `_bytes`, ...), or on the `otel_scope_name`, `otel_scope_version`, and `otel_scope_schema_url` labels, set the
+  corresponding fields to `false` explicitly to keep the previous behavior:
+
+  ```yaml
+  service:
+    telemetry:
+      metrics:
+        readers:
+          - pull:
+              exporter:
+                prometheus:
+                  host: localhost
+                  port: 8888
+                  without_type_suffix: false
+                  without_units: false
+                  without_scope_info: false
+  ```
+
 ### 💡 Enhancements 💡
 
 - `pkg/exporterhelper`: Add `otelcol_exporter_in_flight_requests` metric to track the number of export requests currently in-flight per exporter. (#15009)
@@ -584,12 +612,6 @@ If you are looking for developer-facing changes, check out [CHANGELOG-API.md](./
   matching grpclog's intended semantics. See uber-go/zap#1544.
   
 - `pkg/pdata`: `pcommon.Value.AsString` no longer HTML-escapes `<`, `>`, and `&` inside `ValueTypeMap` and `ValueTypeSlice` values, matching the behavior already used for `ValueTypeStr`. (#14662)
-- `pkg/service`: Fix Prometheus config defaults mismatch when host is explicitly set in telemetry configuration. (#13867)
-  When users explicitly configured the telemetry metrics section (e.g. to change the host),
-  the Prometheus exporter boolean fields (WithoutScopeInfo, WithoutUnits, WithoutTypeSuffix)
-  defaulted to nil/false instead of true, causing metric name format changes compared to the
-  implicit default configuration. This fix applies the correct defaults during config unmarshaling.
-  
 - `pkg/service`: Return noop tracer provider when no trace processors are defined (#15135)
 
 <!-- previous-version -->
