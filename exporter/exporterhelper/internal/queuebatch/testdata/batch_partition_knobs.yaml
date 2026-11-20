@@ -1,0 +1,8 @@
+enabled: true
+queue_size: 2000
+batch:
+  min_size: 100
+  partition:
+    metadata_keys: [tenant]
+    cache_size: 42
+    idle_timeout: 5s

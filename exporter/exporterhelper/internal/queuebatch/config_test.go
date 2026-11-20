@@ -232,6 +232,24 @@ func TestUnmarshal(t *testing.T) {
 			},
 		},
 		{
+			path: "batch_partition_knobs.yaml",
+			expectedCfg: func() configoptional.Optional[Config] {
+				cfg := newBaseCfg()
+				cfg.Get().QueueSize = 2000
+				cfg.Get().Batch = configoptional.Some(BatchConfig{
+					FlushTimeout: 200 * time.Millisecond,
+					Sizer:        request.SizerTypeItems,
+					MinSize:      100,
+					Partition: PartitionConfig{
+						MetadataKeys: []string{"tenant"},
+						CacheSize:    42,
+						IdleTimeout:  5 * time.Second,
+					},
+				})
+				return cfg
+			},
+		},
+		{
 			path: "batch_unset.yaml",
 			// Batch remains unset, sizer override does not apply.
 			expectedCfg: newBaseCfg,
