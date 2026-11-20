@@ -75,6 +75,27 @@ exporters:
 The full list of settings exposed for this exporter are documented [here](./config.go)
 with detailed sample configurations [here](./testdata/config.yaml).
 
+## Authentication failures
+
+When the endpoint rejects the request with `401 Unauthorized`, the batch is dropped as
+a permanent error, as before. In addition, the exporter stops sending further requests
+to that endpoint for 60 seconds, so a stream of batches from an endpoint whose
+credentials were revoked does not keep arriving at the server. Batches received during
+that pause are dropped immediately without being sent, and a request is attempted again
+once the pause expires.
+
+If the response carries a `Retry-After` header with a delay longer than 60 seconds, the
+exporter honors it and pauses for that long instead. A shorter delay is ignored, since
+the exporter has no way to know when the credentials become valid again and a very short
+pause would not stop the stream of rejected batches. The header accepts either a number
+of seconds or an HTTP-date, as defined in
+[RFC 7231](https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.3).
+
+This behavior is client-side only: it requires no support from the receiving endpoint
+beyond returning `401`. The pause is tracked per exporter instance, so a `401` on one
+signal does not pause the others. Note that requests already in flight when the `401`
+arrives are not cancelled.
+
 ## Profiles Development Version
 
 The Profiles exporter sends exactly one `OTLP-Profiles-Development-Version`

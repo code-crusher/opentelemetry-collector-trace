@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -46,6 +47,16 @@ type baseExporter struct {
 	settings    component.TelemetrySettings
 	// Default user-agent header.
 	userAgent string
+
+	// authCooldown is how long exports are paused after the server rejected the
+	// credentials. A longer delay requested by the server takes precedence.
+	authCooldown time.Duration
+	// authCooldownMu guards authCooldownUntil.
+	authCooldownMu sync.Mutex
+	// authCooldownUntil is the time until which requests are suppressed after the
+	// server rejected the credentials. Requests received before it are dropped
+	// without being sent.
+	authCooldownUntil time.Time
 }
 
 const (
@@ -54,6 +65,11 @@ const (
 
 	jsonContentType     = "application/json"
 	protobufContentType = "application/x-protobuf"
+
+	// defaultAuthCooldown is how long the exporter stops sending requests to an
+	// endpoint that rejected its credentials, unless the endpoint asks for a
+	// longer delay with a Retry-After header.
+	defaultAuthCooldown = 60 * time.Second
 )
 
 // Create new exporter.
@@ -72,10 +88,11 @@ func newExporter(cfg component.Config, set exporter.Settings) (*baseExporter, er
 
 	// client construction is deferred to start
 	return &baseExporter{
-		config:    oCfg,
-		logger:    set.Logger,
-		userAgent: userAgent,
-		settings:  set.TelemetrySettings,
+		config:       oCfg,
+		logger:       set.Logger,
+		userAgent:    userAgent,
+		settings:     set.TelemetrySettings,
+		authCooldown: defaultAuthCooldown,
 	}, nil
 }
 
@@ -174,6 +191,16 @@ func (e *baseExporter) pushProfiles(ctx context.Context, td pprofile.Profiles) e
 }
 
 func (e *baseExporter) export(ctx context.Context, requestURL string, request []byte, partialSuccessHandler partialSuccessHandler) error {
+	if remaining, ok := e.authCooldownRemaining(); ok {
+		// The endpoint already rejected these credentials. Drop the data without
+		// sending it, the same way the rejected batch was dropped, until the
+		// cooldown expires and a new request probes the endpoint again.
+		return consumererror.NewPermanent(fmt.Errorf(
+			"not sending request: authentication was rejected, exports are paused for another %s",
+			remaining.Round(time.Second),
+		))
+	}
+
 	e.logger.Debug("Preparing to make HTTP request", zap.String("url", requestURL))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(request))
 	if err != nil {
@@ -239,6 +266,14 @@ func (e *baseExporter) export(ctx context.Context, requestURL string, request []
 	}
 	formattedErr = statusutil.NewStatusFromMsgAndHTTPCode(errString, resp.StatusCode).Err()
 
+	if resp.StatusCode == http.StatusUnauthorized {
+		// The credentials were rejected. The data is dropped either way, so pause
+		// sending to this endpoint instead of receiving and rejecting every
+		// subsequent batch. The server may ask for a longer pause with Retry-After.
+		e.startAuthCooldown(resp.Header)
+		return consumererror.NewPermanent(formattedErr)
+	}
+
 	if !isRetryableStatusCode(resp.StatusCode) {
 		return consumererror.NewPermanent(formattedErr)
 	}
@@ -247,25 +282,74 @@ func (e *baseExporter) export(ctx context.Context, requestURL string, request []
 	// See spec https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/protocol/otlp.md#otlphttp-throttling
 	isThrottleError := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable
 	if isThrottleError {
-		// Use Values to check if the header is present, and if present even if it is empty return ThrottleRetry.
-		values := resp.Header.Values(headerRetryAfter)
-		if len(values) == 0 {
-			return formattedErr
-		}
-		// The value of Retry-After field can be either an HTTP-date or a number of
-		// seconds to delay after the response is received. See https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.3
-		//
-		// Retry-After = HTTP-date / delay-seconds
-		//
-		// First try to parse delay-seconds, since that is what the receiver will send.
-		if seconds, err := strconv.Atoi(values[0]); err == nil {
-			return exporterhelper.NewThrottleRetry(formattedErr, time.Duration(seconds)*time.Second)
-		}
-		if date, err := time.Parse(time.RFC1123, values[0]); err == nil {
-			return exporterhelper.NewThrottleRetry(formattedErr, time.Until(date))
+		if delay, ok := parseRetryAfter(resp.Header); ok {
+			return exporterhelper.NewThrottleRetry(formattedErr, delay)
 		}
 	}
 	return formattedErr
+}
+
+// parseRetryAfter returns the delay requested by the Retry-After header.
+// See https://datatracker.ietf.org/doc/html/rfc7231#section-7.1.3
+//
+// Retry-After = HTTP-date / delay-seconds
+//
+// First try to parse delay-seconds, since that is what the receiver will send.
+// The delay is not reported for a missing, empty, or malformed header.
+func parseRetryAfter(header http.Header) (time.Duration, bool) {
+	values := header.Values(headerRetryAfter)
+	if len(values) == 0 {
+		return 0, false
+	}
+	if seconds, err := strconv.Atoi(values[0]); err == nil {
+		return time.Duration(seconds) * time.Second, true
+	}
+	if date, err := time.Parse(time.RFC1123, values[0]); err == nil {
+		return time.Until(date), true
+	}
+	return 0, false
+}
+
+// startAuthCooldown stops sending requests for authCooldown, or for the longer
+// delay the server requested with a Retry-After header.
+func (e *baseExporter) startAuthCooldown(header http.Header) {
+	cooldown := e.authCooldown
+	if delay, ok := parseRetryAfter(header); ok && delay > cooldown {
+		// Only honor a delay longer than the configured one: the server is
+		// telling us that it knows the credentials stay invalid for that long.
+		cooldown = delay
+	}
+
+	until := time.Now().Add(cooldown)
+	if !e.extendAuthCooldown(until) {
+		// A cooldown at least this long is already in effect.
+		return
+	}
+	e.logger.Warn(
+		"Authentication was rejected, pausing exports to the endpoint.",
+		zap.Duration("cooldown", cooldown),
+	)
+}
+
+// extendAuthCooldown moves the end of the cooldown to until, and reports
+// whether it was extended. A cooldown already ending later is left untouched.
+func (e *baseExporter) extendAuthCooldown(until time.Time) bool {
+	e.authCooldownMu.Lock()
+	defer e.authCooldownMu.Unlock()
+	if !until.After(e.authCooldownUntil) {
+		return false
+	}
+	e.authCooldownUntil = until
+	return true
+}
+
+// authCooldownRemaining reports whether exports are paused after an
+// authentication failure, and for how much longer.
+func (e *baseExporter) authCooldownRemaining() (time.Duration, bool) {
+	e.authCooldownMu.Lock()
+	defer e.authCooldownMu.Unlock()
+	remaining := time.Until(e.authCooldownUntil)
+	return remaining, remaining > 0
 }
 
 // Determine if the status code is retryable according to the specification.

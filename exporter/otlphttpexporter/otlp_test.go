@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -157,6 +158,27 @@ func TestErrorResponses(t *testing.T) {
 			},
 		},
 		{
+			name:           "401",
+			responseStatus: http.StatusUnauthorized,
+			responseBody:   status.New(codes.Unauthenticated, "Bad credentials"),
+			checkErr: func(t *testing.T, err error, _ *httptest.Server) {
+				assert.True(t, consumererror.IsPermanent(err))
+				require.ErrorContains(t, err, "401, Message=Bad credentials")
+			},
+		},
+		{
+			name:           "401-Retry-After",
+			responseStatus: http.StatusUnauthorized,
+			responseBody:   status.New(codes.Unauthenticated, "Bad credentials"),
+			headers:        map[string]string{"Retry-After": "3600"},
+			checkErr: func(t *testing.T, err error, _ *httptest.Server) {
+				// The Retry-After header only drives the cooldown, the error itself
+				// stays a permanent error for the rejected batch.
+				assert.True(t, consumererror.IsPermanent(err))
+				require.ErrorContains(t, err, "401, Message=Bad credentials")
+			},
+		},
+		{
 			name:           "429",
 			responseStatus: http.StatusTooManyRequests,
 			responseBody:   status.New(codes.ResourceExhausted, "Quota exceeded"),
@@ -287,6 +309,128 @@ func TestErrorResponseInvalidResponseBody(t *testing.T) {
 		ContentLength: 100,
 	}
 	assert.Nil(t, readResponseStatus(resp))
+}
+
+func TestAuthCooldown(t *testing.T) {
+	// A server that rejects the credentials with 401 and a configurable
+	// Retry-After header, counting how many requests reach it.
+	newUnauthorizedBackend := func(t *testing.T, retryAfter string) (*httptest.Server, *atomic.Int64) {
+		var requests atomic.Int64
+		srv := createBackend("/v1/traces", func(writer http.ResponseWriter, _ *http.Request) {
+			requests.Add(1)
+			if retryAfter != "" {
+				writer.Header().Set(headerRetryAfter, retryAfter)
+			}
+			writer.WriteHeader(http.StatusUnauthorized)
+			msg, err := proto.Marshal(status.New(codes.Unauthenticated, "Bad credentials").Proto())
+			assert.NoError(t, err)
+			_, err = writer.Write(msg)
+			assert.NoError(t, err)
+		})
+		t.Cleanup(srv.Close)
+		return srv, &requests
+	}
+
+	// newTestExporter returns an exporter wired to srv. It is the bare
+	// baseExporter so the tests see the errors of pushTraces directly, without
+	// the retry and queue senders in between.
+	newTestExporter := func(t *testing.T, srv *httptest.Server) *baseExporter {
+		cfg := &Config{Encoding: EncodingProto, TracesEndpoint: srv.URL + "/v1/traces"}
+		exp, err := newExporter(cfg, exportertest.NewNopSettings(metadata.Type))
+		require.NoError(t, err)
+		exp.tracesURL = cfg.TracesEndpoint
+		require.NoError(t, exp.start(context.Background(), componenttest.NewNopHost()))
+		t.Cleanup(exp.client.CloseIdleConnections)
+		return exp
+	}
+
+	// expireCooldown simulates the cooldown elapsing without waiting for it.
+	expireCooldown := func(exp *baseExporter) {
+		exp.authCooldownMu.Lock()
+		defer exp.authCooldownMu.Unlock()
+		exp.authCooldownUntil = time.Now().Add(-time.Second)
+	}
+
+	t.Run("subsequent requests are dropped after a 401", func(t *testing.T) {
+		srv, requests := newUnauthorizedBackend(t, "")
+		exp := newTestExporter(t, srv)
+
+		err := exp.pushTraces(context.Background(), ptrace.NewTraces())
+		require.Error(t, err)
+		assert.True(t, consumererror.IsPermanent(err))
+
+		for range 5 {
+			err = exp.pushTraces(context.Background(), ptrace.NewTraces())
+			require.Error(t, err)
+			assert.True(t, consumererror.IsPermanent(err), "dropped data must not be retried")
+			require.ErrorContains(t, err, "authentication was rejected")
+		}
+		assert.EqualValues(t, 1, requests.Load(), "only the first batch must reach the server")
+	})
+
+	t.Run("Retry-After longer than the default is honored", func(t *testing.T) {
+		srv, requests := newUnauthorizedBackend(t, "3600")
+		exp := newTestExporter(t, srv)
+
+		require.Error(t, exp.pushTraces(context.Background(), ptrace.NewTraces()))
+
+		remaining, ok := exp.authCooldownRemaining()
+		require.True(t, ok)
+		assert.InDelta(t, time.Hour.Seconds(), remaining.Seconds(), 5, "the server hint must replace the default cooldown")
+
+		require.Error(t, exp.pushTraces(context.Background(), ptrace.NewTraces()))
+		assert.EqualValues(t, 1, requests.Load())
+
+		// The drop message reports the remaining time from the server hint.
+		err := exp.pushTraces(context.Background(), ptrace.NewTraces())
+		require.ErrorContains(t, err, "exports are paused for another 1h0m0s")
+	})
+
+	t.Run("Retry-After shorter than the default does not shorten the cooldown", func(t *testing.T) {
+		srv, requests := newUnauthorizedBackend(t, "1")
+		exp := newTestExporter(t, srv)
+
+		require.Error(t, exp.pushTraces(context.Background(), ptrace.NewTraces()))
+		require.Error(t, exp.pushTraces(context.Background(), ptrace.NewTraces()))
+		assert.EqualValues(t, 1, requests.Load(), "a short server hint must not re-enable exports early")
+	})
+
+	t.Run("malformed Retry-After falls back to the default", func(t *testing.T) {
+		srv, requests := newUnauthorizedBackend(t, "Malformed")
+		exp := newTestExporter(t, srv)
+
+		require.Error(t, exp.pushTraces(context.Background(), ptrace.NewTraces()))
+		require.Error(t, exp.pushTraces(context.Background(), ptrace.NewTraces()))
+		assert.EqualValues(t, 1, requests.Load())
+	})
+
+	t.Run("a new 401 keeps the delay requested by the server", func(t *testing.T) {
+		srv, requests := newUnauthorizedBackend(t, "3600")
+		exp := newTestExporter(t, srv)
+
+		require.Error(t, exp.pushTraces(context.Background(), ptrace.NewTraces()))
+
+		expireCooldown(exp)
+		require.Error(t, exp.pushTraces(context.Background(), ptrace.NewTraces()))
+		assert.EqualValues(t, 2, requests.Load())
+
+		remaining, ok := exp.authCooldownRemaining()
+		require.True(t, ok)
+		assert.InDelta(t, time.Hour.Seconds(), remaining.Seconds(), 5, "the cooldown must not fall back to the default")
+	})
+
+	t.Run("exports resume after the cooldown", func(t *testing.T) {
+		srv, requests := newUnauthorizedBackend(t, "")
+		exp := newTestExporter(t, srv)
+
+		require.Error(t, exp.pushTraces(context.Background(), ptrace.NewTraces()))
+		require.EqualValues(t, 1, requests.Load())
+
+		expireCooldown(exp)
+
+		require.Error(t, exp.pushTraces(context.Background(), ptrace.NewTraces()))
+		assert.EqualValues(t, 2, requests.Load(), "a new request must probe the endpoint once the cooldown expires")
+	})
 }
 
 func TestUserAgent(t *testing.T) {
